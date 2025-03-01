@@ -1,0 +1,4 @@
+pyqt5>=5.15.0
+pyzed
+pyserial>=3.5
+pynmea2>=1.18.0
