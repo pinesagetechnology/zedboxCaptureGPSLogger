@@ -143,10 +143,23 @@ class CaptureController:
             # Get current GPS data
             gps_data = self.gps.get_current_data()
             
+            # Get view mode from settings if available
+            view_mode_str = self.settings.get("view_mode", "LEFT")
+            view_mode = sl.VIEW.LEFT  # Default
+            
+            # Map string to sl.VIEW enum
+            if view_mode_str == "RIGHT":
+                view_mode = sl.VIEW.RIGHT
+            elif view_mode_str == "DEPTH":
+                view_mode = sl.VIEW.DEPTH
+            elif view_mode_str == "CONFIDENCE":
+                view_mode = sl.VIEW.CONFIDENCE
+            
             # Create metadata
             metadata = {
                 "datetime": datetime.now().isoformat(),
                 "capture_mode": self.settings["capture_mode"],
+                "view_mode": view_mode_str,
                 "gps": {
                     "latitude": gps_data["latitude"],
                     "longitude": gps_data["longitude"],
@@ -164,10 +177,10 @@ class CaptureController:
             
             # Generate file prefix
             date_str = datetime.now().strftime("%Y%m%d")
-            file_prefix = f"zed_{date_str}"
+            file_prefix = f"zed_{date_str}_{view_mode_str.lower()}"
             
-            # Capture image
-            success, image_path = self.camera.capture_image(output_dir, file_prefix, metadata)
+            # Capture image with the selected view mode
+            success, image_path = self.camera.capture_image(output_dir, file_prefix, metadata, view_mode)
             
             if success:
                 self.capture_count += 1
@@ -177,7 +190,7 @@ class CaptureController:
                 if self.gps.has_fix():
                     self.last_capture_location = (gps_data["latitude"], gps_data["longitude"])
                     
-                self.logger.info(f"Captured image #{self.capture_count}: {image_path}")
+                self.logger.info(f"Captured {view_mode_str} image #{self.capture_count}: {image_path}")
                 
             return success
             
