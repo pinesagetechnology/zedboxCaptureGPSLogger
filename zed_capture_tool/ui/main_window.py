@@ -14,6 +14,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter import StringVar, IntVar, DoubleVar, BooleanVar
 from PIL import Image, ImageTk
+import cv2
+import pyzed.sl as sl
 
 from ..camera.zed_camera import ZedCamera
 from ..gps.gps_receiver import GPSReceiver
@@ -115,6 +117,7 @@ class MainWindow:
         
         self.preview_label = ttk.Label(preview_frame, text="No preview available")
         self.preview_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.preview_label.config(width=640, height=360)  # Set default size
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
@@ -442,6 +445,9 @@ class MainWindow:
             # Initialize capture controller if not already
             if not self.capture_controller:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
+            
+            # Start preview updates
+            self.update_preview()
                 
             return True
         else:
@@ -455,6 +461,11 @@ class MainWindow:
         # Stop capture if running
         if self.capture_controller and self.capture_controller.is_capturing:
             self.capture_controller.stop_capture()
+
+        # Remove preview image if it exists
+        if hasattr(self, 'photo_image'):
+            self.preview_label.config(image=None)
+            self.photo_image = None
             
         self.camera.disconnect()
         
@@ -630,3 +641,63 @@ class MainWindow:
         
         # Destroy window
         self.root.destroy()
+    
+    def update_preview(self):
+        """Update the camera preview image"""
+        if not self.camera.is_connected:
+            return
+            
+        try:
+            # Create image object if doesn't exist
+            if not hasattr(self, 'preview_image'):
+                self.preview_image = sl.Mat()
+                
+            # Grab new frame (with timeout of 200ms)
+            if self.camera.camera.grab(self.camera.runtime_params) == sl.ERROR_CODE.SUCCESS:
+                # Retrieve image
+                self.camera.camera.retrieve_image(self.preview_image, sl.VIEW.LEFT)
+                
+                # Convert ZED image to a format suitable for Tkinter
+                # Get image data
+                image_ocv = self.preview_image.get_data()
+                
+                # Convert from BGR to RGB (PIL uses RGB)
+                image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGR2RGB)
+                
+                # Resize image to fit the preview area
+                preview_width = self.preview_label.winfo_width()
+                preview_height = self.preview_label.winfo_height()
+                
+                if preview_width > 100 and preview_height > 100:  # Ensure the widget has a reasonable size
+                    # Calculate aspect ratio
+                    img_height, img_width = image_rgb.shape[:2]
+                    aspect_ratio = img_width / img_height
+                    
+                    # Calculate new dimensions maintaining aspect ratio
+                    if preview_width / preview_height > aspect_ratio:
+                        # Preview area is wider than the image
+                        new_height = preview_height
+                        new_width = int(new_height * aspect_ratio)
+                    else:
+                        # Preview area is taller than the image
+                        new_width = preview_width
+                        new_height = int(new_width / aspect_ratio)
+                    
+                    # Resize image
+                    image_resized = cv2.resize(image_rgb, (new_width, new_height))
+                    
+                    # Convert to PIL Image
+                    image_pil = Image.fromarray(image_resized)
+                    
+                    # Convert to PhotoImage for Tkinter
+                    self.photo_image = ImageTk.PhotoImage(image=image_pil)
+                    
+                    # Update label
+                    self.preview_label.config(image=self.photo_image)
+                    self.preview_label.image = self.photo_image  # Keep a reference
+        except Exception as e:
+            self.logger.error(f"Error updating preview: {e}")
+        
+        # Schedule next update if still connected
+        if self.camera.is_connected:
+            self.root.after(100, self.update_preview)  # Update every 100ms
