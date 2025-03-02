@@ -92,7 +92,10 @@ class VideoRecorder:
                 "filename": video_filename,
                 "start_time": self.start_time.isoformat(),
                 "camera_settings": {
+                    # Fix the incorrect attribute access
                     "resolution": self.camera.camera.get_camera_information().camera_resolution.name,
+                    # Change to:
+                    "resolution": str(self.camera.camera.get_camera_information().camera_model),
                     "fps": self.camera.camera.get_camera_information().camera_fps
                 },
                 "recording_settings": {
