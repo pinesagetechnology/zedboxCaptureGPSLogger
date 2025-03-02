@@ -32,6 +32,9 @@ class MainWindow:
         self.root.title("ZED Camera Capture Tool")
         self.root.geometry("800x700")
         
+        # Prevent window resizing to maintain consistent layout
+        self.root.resizable(False, False)
+        
         # Set up logging
         self.logger = logging.getLogger("MainWindow")
         
@@ -76,7 +79,7 @@ class MainWindow:
         
         # Connect to devices
         self.connect_devices()
-        
+
     def setup_ui(self):
         """Set up the main user interface"""
         
@@ -123,7 +126,7 @@ class MainWindow:
     def setup_capture_tab(self):
         """Set up the capture tab UI with multiple camera views"""
         
-        # Preview area - Now with multiple views
+        # Preview area - Now with multiple fixed-size views
         preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
@@ -134,21 +137,24 @@ class MainWindow:
         # Create labels for each view type
         self.preview_labels = {}
         
-        # We'll dynamically populate the views based on what's available,
-        # but set up the basic structure for common views
+        # Fixed size for each preview (width, height in pixels)
+        preview_width = 320
+        preview_height = 240
         
         # RGB View
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
         rgb_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         
-        self.preview_labels["rgb"] = tk.Label(rgb_frame, text="No RGB preview", bg="#222222", fg="white")
+        self.preview_labels["rgb"] = tk.Label(rgb_frame, text="No RGB preview", bg="#222222", fg="white",
+                                            width=preview_width//10, height=preview_height//10)  # Approximate char size
         self.preview_labels["rgb"].pack(fill=tk.BOTH, expand=True)
         
         # Depth View
         depth_frame = ttk.LabelFrame(views_frame, text="Depth Map")
         depth_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
         
-        self.preview_labels["depth"] = tk.Label(depth_frame, text="No depth preview", bg="#222222", fg="white")
+        self.preview_labels["depth"] = tk.Label(depth_frame, text="No depth preview", bg="#222222", fg="white",
+                                            width=preview_width//10, height=preview_height//10)
         self.preview_labels["depth"].pack(fill=tk.BOTH, expand=True)
         
         # Third View (might be Disparity or Confidence depending on SDK version)
@@ -156,14 +162,16 @@ class MainWindow:
         third_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
         
         # We'll use a generic key first, then update the label text when we know what's available
-        self.preview_labels["disparity"] = tk.Label(third_frame, text="No additional view", bg="#222222", fg="white")
+        self.preview_labels["disparity"] = tk.Label(third_frame, text="No additional view", bg="#222222", fg="white",
+                                                width=preview_width//10, height=preview_height//10)
         self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
         
         # Fourth View (Point Cloud)
         point_cloud_frame = ttk.LabelFrame(views_frame, text="Point Cloud")
         point_cloud_frame.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
         
-        self.preview_labels["point_cloud"] = tk.Label(point_cloud_frame, text="No point cloud preview", bg="#222222", fg="white")
+        self.preview_labels["point_cloud"] = tk.Label(point_cloud_frame, text="No point cloud preview", bg="#222222", fg="white",
+                                                    width=preview_width//10, height=preview_height//10)
         self.preview_labels["point_cloud"].pack(fill=tk.BOTH, expand=True)
         
         # Configure grid to expand properly
@@ -825,6 +833,10 @@ class MainWindow:
             # Create a dictionary to store the PhotoImage objects to prevent garbage collection
             if not hasattr(self, 'photo_images'):
                 self.photo_images = {}
+            
+            # Fixed size for preview images (should match what we set in setup_capture_tab)
+            preview_width = 320
+            preview_height = 240
                 
             # Process each view
             for view_name, image_data in frame_data.items():
@@ -859,37 +871,18 @@ class MainWindow:
                         # For any other view type, just convert to RGB
                         image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
                     
-                    # Resize image to fit the preview area
-                    preview_width = self.preview_labels[view_name].winfo_width()
-                    preview_height = self.preview_labels[view_name].winfo_height()
+                    # Always resize to the fixed preview size regardless of the actual image size
+                    image_resized = cv2.resize(image_rgb, (preview_width, preview_height))
                     
-                    if preview_width > 100 and preview_height > 100:  # Ensure the widget has a reasonable size
-                        # Calculate aspect ratio
-                        img_height, img_width = image_rgb.shape[:2]
-                        aspect_ratio = img_width / img_height
-                        
-                        # Calculate new dimensions maintaining aspect ratio
-                        if preview_width / preview_height > aspect_ratio:
-                            # Preview area is wider than the image
-                            new_height = preview_height
-                            new_width = int(new_height * aspect_ratio)
-                        else:
-                            # Preview area is taller than the image
-                            new_width = preview_width
-                            new_height = int(new_width / aspect_ratio)
-                        
-                        # Resize image
-                        image_resized = cv2.resize(image_rgb, (new_width, new_height))
-                        
-                        # Convert to PIL Image
-                        image_pil = Image.fromarray(image_resized)
-                        
-                        # Convert to PhotoImage for Tkinter
-                        self.photo_images[view_name] = ImageTk.PhotoImage(image=image_pil)
-                        
-                        # Update label
-                        self.preview_labels[view_name].config(image=self.photo_images[view_name])
-                        self.preview_labels[view_name].image = self.photo_images[view_name]  # Keep a reference
+                    # Convert to PIL Image
+                    image_pil = Image.fromarray(image_resized)
+                    
+                    # Convert to PhotoImage for Tkinter
+                    self.photo_images[view_name] = ImageTk.PhotoImage(image=image_pil)
+                    
+                    # Update label
+                    self.preview_labels[view_name].config(image=self.photo_images[view_name])
+                    self.preview_labels[view_name].image = self.photo_images[view_name]  # Keep a reference
                         
         except Exception as e:
             self.logger.error(f"Error updating preview: {e}")
@@ -1452,16 +1445,16 @@ class MainWindow:
             available_types = self.camera.get_available_view_types()
             self.logger.info(f"Available view types: {available_types}")
             
+            # Fixed size for preview images (should match what we set in setup_capture_tab)
+            preview_width = 320
+            preview_height = 240
+            
             # Update frame titles and checkboxes based on available types
             if "disparity" in available_types:
                 # If disparity is available, use it for the third view
                 if "disparity" in self.preview_labels:
-                    for widget in self.preview_labels["disparity"].master.winfo_children():
-                        widget.destroy()
+                    # Update frame label but keep the widget - this prevents layout shifts
                     self.preview_labels["disparity"].master.configure(text="Disparity Map")
-                    self.preview_labels["disparity"] = tk.Label(self.preview_labels["disparity"].master, 
-                                                            text="No disparity preview", bg="#222222", fg="white")
-                    self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
                     
                     # Show the disparity checkbox
                     if "disparity" in self.view_checkbuttons:
@@ -1470,14 +1463,12 @@ class MainWindow:
             elif "confidence" in available_types:
                 # If confidence is available but disparity isn't, use confidence for the third view
                 if "disparity" in self.preview_labels:
-                    # Change the key in preview_labels
+                    # Update frame label but keep the widget - prevents layout shifts
                     third_view_master = self.preview_labels["disparity"].master
-                    self.preview_labels["disparity"].destroy()
-                    
                     third_view_master.configure(text="Confidence Map")
-                    self.preview_labels["confidence"] = tk.Label(third_view_master, 
-                                                            text="No confidence preview", bg="#222222", fg="white")
-                    self.preview_labels["confidence"].pack(fill=tk.BOTH, expand=True)
+                    
+                    # We'll reuse the disparity label for confidence data
+                    # This prevents layout shifts by not destroying/recreating widgets
                     
                     # Show the confidence checkbox instead of disparity
                     if "confidence" in self.view_checkbuttons and "disparity" in self.view_checkbuttons:
@@ -1505,7 +1496,9 @@ class MainWindow:
                 if view_type not in available_types and view_type in self.preview_labels:
                     label = self.preview_labels[view_type]
                     if label:
-                        label.config(text=f"{view_type.title()} view not available in this SDK version")
+                        label.config(text=f"{view_type.title()} view not available")
+                        # Ensure label has fixed size
+                        label.config(width=preview_width//10, height=preview_height//10)
                         
         except Exception as e:
             self.logger.error(f"Error updating view UI: {e}")
