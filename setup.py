@@ -12,7 +12,7 @@ setup(
     author="Your Name",
     packages=find_packages(),
     install_requires=[
-        #"pyzed",
+        "pyzed",
         "pyserial>=3.5",
         "pynmea2>=1.18.0",
         "pillow",  # For image handling in Tkinter
