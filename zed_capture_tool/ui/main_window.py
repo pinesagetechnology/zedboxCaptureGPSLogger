@@ -30,7 +30,7 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("ZED Camera Capture Tool")
-        self.root.geometry("800x700")
+        self.root.geometry("2400x2100")  # Triple the original size: 800*3 x 700*3
         
         # Allow window resizing (default behavior)
         # self.root.resizable(True, True)
@@ -138,8 +138,9 @@ class MainWindow:
         self.preview_labels = {}
         
         # Fixed size for each preview (width, height in pixels)
-        preview_width = 320
-        preview_height = 240
+        # Double the original size: 320*2, 240*2
+        preview_width = 640
+        preview_height = 480
         
         # RGB View - fixed size
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
@@ -189,6 +190,12 @@ class MainWindow:
             "depth": depth_canvas,
             "disparity": third_canvas,
             "point_cloud": point_cloud_canvas
+        }
+        
+        # Also store the preview dimensions for use in other methods
+        self.preview_dimensions = {
+            "width": preview_width,
+            "height": preview_height
         }
         
         # Capture mode selection
@@ -845,9 +852,14 @@ class MainWindow:
             if not hasattr(self, 'photo_images'):
                 self.photo_images = {}
             
-            # Fixed size for preview images (should match canvas sizes)
-            preview_width = 320
-            preview_height = 240
+            # Get preview dimensions from self (set in setup_capture_tab)
+            if hasattr(self, 'preview_dimensions'):
+                preview_width = self.preview_dimensions["width"]
+                preview_height = self.preview_dimensions["height"]
+            else:
+                # Default to 640x480 if not set
+                preview_width = 640
+                preview_height = 480
                 
             # Process each view
             for view_name, image_data in frame_data.items():
