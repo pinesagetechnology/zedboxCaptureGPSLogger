@@ -36,29 +36,27 @@ class ZedCamera:
             self.disconnect()
                 
         try:
-            # Configure camera init parameters based on settings
-            # Make sure we use a resolution that's definitely supported
-            resolution_name = settings["camera"]["resolution"]
-            if resolution_name in self.RESOLUTIONS:
-                self.init_params.camera_resolution = self.RESOLUTIONS[resolution_name]
-            else:
-                # Default to a safe resolution if the specified one isn't valid
-                self.logger.warning(f"Invalid resolution '{resolution_name}', defaulting to HD720")
-                self.init_params.camera_resolution = sl.RESOLUTION.HD720
+            # For ZED X, only HD1080 is supported based on testing
+            self.init_params.camera_resolution = sl.RESOLUTION.HD1080
+            self.logger.info("Using HD1080 resolution for ZED X camera")
                 
-            self.init_params.camera_fps = settings["camera"]["fps"]
-            
+            # Set FPS (use requested FPS, but default to 15 which we know works)
+            fps = settings["camera"]["fps"]
+            self.init_params.camera_fps = 15  # Default to known working value
+            if fps in [15, 30]:  # Common supported FPS values
+                self.init_params.camera_fps = fps
+                
             # Open the camera
-            self.logger.info(f"Opening camera with resolution {resolution_name} at {settings['camera']['fps']} FPS")
+            self.logger.info(f"Opening camera with HD1080 resolution at {self.init_params.camera_fps} FPS")
             status = self.camera.open(self.init_params)
             if status != sl.ERROR_CODE.SUCCESS:
                 self.logger.error(f"Failed to open camera: {status}")
                 return False
-                
+                    
             # Apply camera settings if in manual mode
             if settings["camera"]["mode"] == "manual":
                 self.apply_manual_settings(settings["camera"])
-                
+                    
             self.is_connected = True
             self.logger.info(f"Connected to ZED camera: {self.camera.get_camera_information().serial_number}")
             return True
