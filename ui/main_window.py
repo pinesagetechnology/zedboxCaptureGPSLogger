@@ -1,34 +1,32 @@
 #!/usr/bin/env python3
 """
 Main window module for ZED Camera Capture Tool.
-Implements the main user interface.
+Implements the main user interface using Tkinter.
 """
 
 import os
 import logging
 import time
+import threading
 from datetime import datetime
 from pathlib import Path
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QTabWidget, QGroupBox, QLabel, QPushButton, 
-    QRadioButton, QSpinBox, QDoubleSpinBox, QComboBox,
-    QCheckBox, QSlider, QFileDialog, QMessageBox,
-    QLineEdit, QTextEdit, QStatusBar, QProgressBar
-)
-from PyQt5.QtCore import Qt, QTimer, pyqtSlot, QDir
-from PyQt5.QtGui import QPixmap, QImage
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from tkinter import StringVar, IntVar, DoubleVar, BooleanVar
+from PIL import Image, ImageTk
 
 from camera.zed_camera import ZedCamera
 from gps.gps_receiver import GPSReceiver
 from capture.capture_controller import CaptureController
 from config import load_settings, save_settings
 
-class MainWindow(QMainWindow):
-    """Main application window"""
+class MainWindow:
+    """Main application window using Tkinter"""
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, root):
+        self.root = root
+        self.root.title("ZED Camera Capture Tool")
+        self.root.geometry("800x700")
         
         # Set up logging
         self.logger = logging.getLogger("MainWindow")
@@ -41,15 +39,36 @@ class MainWindow(QMainWindow):
         self.gps = GPSReceiver()
         self.capture_controller = None  # Will initialize after camera and GPS are connected
         
-        # Timers
-        self.ui_update_timer = QTimer(self)
-        self.ui_update_timer.timeout.connect(self.update_ui)
-        self.ui_update_timer.start(500)  # Update UI every 500ms
+        # Variables for UI elements
+        self.capture_mode_var = StringVar(value="time" if self.settings["capture_mode"] == "time" else "gps")
+        self.time_interval_var = IntVar(value=self.settings["time_interval"])
+        self.gps_interval_var = DoubleVar(value=self.settings["gps_interval"])
+        self.output_dir_var = StringVar(value=self.settings["output_directory"])
+        self.camera_mode_var = StringVar(value=self.settings["camera"]["mode"])
+        self.resolution_var = StringVar(value=self.settings["camera"]["resolution"])
+        self.fps_var = IntVar(value=self.settings["camera"]["fps"])
+        
+        # Camera setting variables
+        self.camera_settings_vars = {}
+        for name in ["brightness", "contrast", "hue", "saturation", "exposure", "gain", "whitebalance"]:
+            self.camera_settings_vars[name] = {
+                "value": IntVar(value=self.settings["camera"][name]),
+                "auto": BooleanVar(value=(self.settings["camera"][name] == -1))
+            }
+        
+        # GPS setting variables
+        self.gps_port_var = StringVar(value=self.settings["gps"]["port"])
+        self.gps_baud_var = IntVar(value=self.settings["gps"]["baud_rate"])
         
         # Set up UI
-        self.setWindowTitle("ZED Camera Capture Tool")
-        self.resize(800, 600)
         self.setup_ui()
+        
+        # Status variables
+        self.is_capturing = False
+        self.capture_count = 0
+        
+        # Timer for UI updates
+        self.update_ui()
         
         # Connect to devices
         self.connect_devices()
@@ -57,168 +76,157 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         """Set up the main user interface"""
         
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Main layout
-        main_layout = QVBoxLayout(central_widget)
-        
-        # Status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        
-        # Tab widget
-        tab_widget = QTabWidget()
-        main_layout.addWidget(tab_widget)
+        # Create a notebook (tabbed interface)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Capture tab
-        capture_tab = QWidget()
-        tab_widget.addTab(capture_tab, "Capture")
-        self.setup_capture_tab(capture_tab)
+        self.capture_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.capture_tab, text="Capture")
+        self.setup_capture_tab()
         
         # Settings tab
-        settings_tab = QWidget()
-        tab_widget.addTab(settings_tab, "Settings")
-        self.setup_settings_tab(settings_tab)
+        self.settings_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.settings_tab, text="Settings")
+        self.setup_settings_tab()
         
-        # Status display
-        self.setup_status_display(main_layout)
+        # Status bar
+        self.status_frame = ttk.Frame(self.root)
+        self.status_frame.pack(fill=tk.X, padx=10, pady=5)
         
-    def setup_capture_tab(self, tab):
+        self.camera_status_label = ttk.Label(self.status_frame, text="Camera: Disconnected")
+        self.camera_status_label.pack(side=tk.LEFT, padx=5)
+        
+        self.gps_status_label = ttk.Label(self.status_frame, text="GPS: Disconnected")
+        self.gps_status_label.pack(side=tk.LEFT, padx=5)
+        
+        self.capture_status_label = ttk.Label(self.status_frame, text="Capture: Idle")
+        self.capture_status_label.pack(side=tk.LEFT, padx=5)
+        
+        self.capture_count_label = ttk.Label(self.status_frame, text="Images: 0")
+        self.capture_count_label.pack(side=tk.LEFT, padx=5)
+        
+    def setup_capture_tab(self):
         """Set up the capture tab UI"""
-        layout = QVBoxLayout(tab)
         
         # Preview area
-        preview_group = QGroupBox("Camera Preview")
-        preview_layout = QVBoxLayout(preview_group)
+        preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.preview_label = QLabel("No preview available")
-        self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setMinimumHeight(300)
-        self.preview_label.setStyleSheet("background-color: #222;")
-        preview_layout.addWidget(self.preview_label)
-        
-        layout.addWidget(preview_group)
+        self.preview_label = ttk.Label(preview_frame, text="No preview available")
+        self.preview_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Capture controls
-        capture_group = QGroupBox("Capture Controls")
-        capture_layout = QVBoxLayout(capture_group)
+        control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
         
         # Capture mode
-        mode_layout = QHBoxLayout()
+        mode_frame = ttk.Frame(control_frame)
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        self.time_mode_radio = QRadioButton("Time Interval:")
-        self.time_mode_radio.setChecked(self.settings["capture_mode"] == "time")
-        self.time_mode_radio.toggled.connect(self.on_capture_mode_changed)
+        # Time interval option
+        time_radio = ttk.Radiobutton(mode_frame, text="Time Interval:", 
+                                     variable=self.capture_mode_var, value="time", 
+                                     command=self.on_capture_mode_changed)
+        time_radio.grid(row=0, column=0, sticky=tk.W)
         
-        self.time_interval_spin = QSpinBox()
-        self.time_interval_spin.setRange(1, 3600)
-        self.time_interval_spin.setValue(self.settings["time_interval"])
-        self.time_interval_spin.setSuffix(" seconds")
+        time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, 
+                               textvariable=self.time_interval_var)
+        time_spin.grid(row=0, column=1, padx=5)
         
-        self.gps_mode_radio = QRadioButton("GPS Distance:")
-        self.gps_mode_radio.setChecked(self.settings["capture_mode"] == "gps")
-        self.gps_mode_radio.toggled.connect(self.on_capture_mode_changed)
+        ttk.Label(mode_frame, text="seconds").grid(row=0, column=2, sticky=tk.W)
         
-        self.gps_interval_spin = QDoubleSpinBox()
-        self.gps_interval_spin.setRange(1, 1000)
-        self.gps_interval_spin.setValue(self.settings["gps_interval"])
-        self.gps_interval_spin.setSuffix(" meters")
+        # GPS interval option
+        gps_radio = ttk.Radiobutton(mode_frame, text="GPS Distance:", 
+                                   variable=self.capture_mode_var, value="gps", 
+                                   command=self.on_capture_mode_changed)
+        gps_radio.grid(row=0, column=3, sticky=tk.W, padx=(20, 0))
         
-        mode_layout.addWidget(self.time_mode_radio)
-        mode_layout.addWidget(self.time_interval_spin)
-        mode_layout.addStretch()
-        mode_layout.addWidget(self.gps_mode_radio)
-        mode_layout.addWidget(self.gps_interval_spin)
+        gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, 
+                              textvariable=self.gps_interval_var)
+        gps_spin.grid(row=0, column=4, padx=5)
         
-        capture_layout.addLayout(mode_layout)
+        ttk.Label(mode_frame, text="meters").grid(row=0, column=5, sticky=tk.W)
         
         # Output directory
-        dir_layout = QHBoxLayout()
+        dir_frame = ttk.Frame(control_frame)
+        dir_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        dir_layout.addWidget(QLabel("Output directory:"))
+        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
         
-        self.output_dir_edit = QLineEdit(self.settings["output_directory"])
-        self.output_dir_edit.setReadOnly(True)
-        dir_layout.addWidget(self.output_dir_edit)
+        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
+        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
         
-        self.browse_button = QPushButton("Browse...")
-        self.browse_button.clicked.connect(self.on_browse_clicked)
-        dir_layout.addWidget(self.browse_button)
+        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
+        browse_button.grid(row=0, column=2, padx=5)
         
-        capture_layout.addLayout(dir_layout)
+        dir_frame.columnconfigure(1, weight=1)
         
         # Capture buttons
-        button_layout = QHBoxLayout()
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.start_button = QPushButton("Start Capture")
-        self.start_button.clicked.connect(self.on_start_capture_clicked)
-        self.start_button.setEnabled(False)  # Disabled until camera is connected
+        self.start_button = ttk.Button(button_frame, text="Start Capture", 
+                                      command=self.on_start_capture_clicked)
+        self.start_button.pack(side=tk.LEFT, padx=5)
+        self.start_button.state(['disabled'])  # Disabled until camera is connected
         
-        self.stop_button = QPushButton("Stop Capture")
-        self.stop_button.clicked.connect(self.on_stop_capture_clicked)
-        self.stop_button.setEnabled(False)  # Disabled until capture starts
+        self.stop_button = ttk.Button(button_frame, text="Stop Capture", 
+                                     command=self.on_stop_capture_clicked)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.stop_button.state(['disabled'])  # Disabled until capture starts
         
-        self.single_capture_button = QPushButton("Single Capture")
-        self.single_capture_button.clicked.connect(self.on_single_capture_clicked)
-        self.single_capture_button.setEnabled(False)  # Disabled until camera is connected
+        self.single_capture_button = ttk.Button(button_frame, text="Single Capture", 
+                                              command=self.on_single_capture_clicked)
+        self.single_capture_button.pack(side=tk.LEFT, padx=5)
+        self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
         
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
-        button_layout.addWidget(self.single_capture_button)
-        
-        capture_layout.addLayout(button_layout)
-        
-        layout.addWidget(capture_group)
-        
-    def setup_settings_tab(self, tab):
+    def setup_settings_tab(self):
         """Set up the settings tab UI"""
-        layout = QVBoxLayout(tab)
         
-        # Camera settings
-        camera_group = QGroupBox("Camera Settings")
-        camera_layout = QVBoxLayout(camera_group)
+        # Create a notebook for settings categories
+        settings_notebook = ttk.Notebook(self.settings_tab)
+        settings_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Camera settings tab
+        camera_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(camera_tab, text="Camera")
         
         # Camera mode
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("Camera Mode:"))
+        mode_frame = ttk.Frame(camera_tab)
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        self.camera_mode_combo = QComboBox()
-        self.camera_mode_combo.addItems(["Auto", "Manual"])
-        self.camera_mode_combo.setCurrentIndex(0 if self.settings["camera"]["mode"] == "auto" else 1)
-        self.camera_mode_combo.currentIndexChanged.connect(self.on_camera_mode_changed)
+        ttk.Label(mode_frame, text="Camera Mode:").grid(row=0, column=0, sticky=tk.W)
         
-        mode_layout.addWidget(self.camera_mode_combo)
-        mode_layout.addStretch()
-        
-        camera_layout.addLayout(mode_layout)
+        mode_combo = ttk.Combobox(mode_frame, textvariable=self.camera_mode_var, 
+                                 values=["auto", "manual"], state="readonly", width=15)
+        mode_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        mode_combo.bind("<<ComboboxSelected>>", self.on_camera_mode_changed)
         
         # Resolution and FPS
-        res_layout = QHBoxLayout()
-        res_layout.addWidget(QLabel("Resolution:"))
+        res_frame = ttk.Frame(camera_tab)
+        res_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        self.resolution_combo = QComboBox()
-        self.resolution_combo.addItems(["HD2K", "HD1080", "HD720", "VGA"])
-        self.resolution_combo.setCurrentText(self.settings["camera"]["resolution"])
+        ttk.Label(res_frame, text="Resolution:").grid(row=0, column=0, sticky=tk.W)
         
-        res_layout.addWidget(self.resolution_combo)
-        res_layout.addStretch()
+        res_combo = ttk.Combobox(res_frame, textvariable=self.resolution_var, 
+                                values=["HD2K", "HD1080", "HD720", "VGA"], 
+                                state="readonly", width=15)
+        res_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        res_layout.addWidget(QLabel("FPS:"))
+        ttk.Label(res_frame, text="FPS:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
-        self.fps_combo = QComboBox()
-        self.fps_combo.addItems(["15", "30", "60", "100"])
-        self.fps_combo.setCurrentText(str(self.settings["camera"]["fps"]))
+        fps_combo = ttk.Combobox(res_frame, textvariable=self.fps_var, 
+                                values=[15, 30, 60, 100], 
+                                state="readonly", width=15)
+        fps_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        res_layout.addWidget(self.fps_combo)
-        
-        camera_layout.addLayout(res_layout)
+        # Camera settings sliders
+        settings_frame = ttk.Frame(camera_tab)
+        settings_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Create settings sliders
-        self.camera_sliders = {}
-        
-        settings_names = [
+        settings_info = [
             ("brightness", "Brightness", 0, 8),
             ("contrast", "Contrast", 0, 8),
             ("hue", "Hue", 0, 11),
@@ -228,138 +236,101 @@ class MainWindow(QMainWindow):
             ("whitebalance", "White Balance", -1, 6500, True)
         ]
         
-        for setting in settings_names:
+        self.camera_setting_widgets = {}
+        
+        for idx, setting in enumerate(settings_info):
             if len(setting) == 4:
                 name, label, min_val, max_val = setting
                 auto_option = False
             else:
                 name, label, min_val, max_val, auto_option = setting
                 
-            # Create slider group
-            slider_group = QGroupBox(label)
-            slider_layout = QVBoxLayout(slider_group)
+            # Create setting frame
+            setting_frame = ttk.LabelFrame(settings_frame, text=label)
+            setting_frame.grid(row=idx // 2, column=idx % 2, padx=10, pady=5, sticky=tk.W+tk.E+tk.N+tk.S)
             
-            # Create auto checkbox if applicable
+            # Auto checkbox if applicable
             if auto_option:
-                auto_check = QCheckBox("Auto")
-                auto_check.setChecked(self.settings["camera"][name] == -1)
-                auto_check.stateChanged.connect(lambda state, n=name: self.on_auto_checkbox_changed(n, state))
-                slider_layout.addWidget(auto_check)
+                auto_check = ttk.Checkbutton(setting_frame, text="Auto", 
+                                          variable=self.camera_settings_vars[name]["auto"],
+                                          command=lambda n=name: self.on_auto_checkbox_changed(n))
+                auto_check.pack(anchor=tk.W, padx=5, pady=2)
                 
-            # Create slider and value display
-            slider_row = QHBoxLayout()
+            # Create scale
+            scale = ttk.Scale(setting_frame, from_=min_val if not auto_option else min_val + 1, 
+                            to=max_val, orient=tk.HORIZONTAL, 
+                            variable=self.camera_settings_vars[name]["value"],
+                            command=lambda val, n=name: self.on_scale_value_changed(n, val))
+            scale.pack(fill=tk.X, padx=5, pady=5)
             
-            slider = QSlider(Qt.Horizontal)
-            slider.setRange(min_val if not auto_option else min_val + 1, max_val)
-            value = self.settings["camera"][name]
-            if auto_option and value == -1:
-                value = (max_val - min_val + 1) // 2  # Set to middle value when auto
-            slider.setValue(value)
-            
-            value_label = QLabel(str(value))
-            
-            slider.valueChanged.connect(lambda value, lbl=value_label, n=name: self.on_slider_value_changed(n, value, lbl))
-            
-            slider_row.addWidget(slider)
-            slider_row.addWidget(value_label)
-            
-            slider_layout.addLayout(slider_row)
+            # Value label
+            value_label = ttk.Label(setting_frame, text=str(self.camera_settings_vars[name]["value"].get()))
+            value_label.pack(anchor=tk.E, padx=5, pady=2)
             
             # Store widgets
-            self.camera_sliders[name] = {
-                "slider": slider,
+            self.camera_setting_widgets[name] = {
+                "scale": scale,
                 "label": value_label,
                 "auto": auto_check if auto_option else None
             }
             
-            # Disable slider if auto is checked
-            if auto_option and self.settings["camera"][name] == -1:
-                slider.setEnabled(False)
-                
-            camera_layout.addWidget(slider_group)
-            
-        # Connect/Disconnect button
-        camera_button_layout = QHBoxLayout()
+            # Disable scale if auto is checked
+            if auto_option and self.camera_settings_vars[name]["auto"].get():
+                scale.state(['disabled'])
         
-        self.connect_camera_button = QPushButton("Connect Camera")
-        self.connect_camera_button.clicked.connect(self.on_connect_camera_clicked)
+        # Camera connect buttons
+        cam_button_frame = ttk.Frame(camera_tab)
+        cam_button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.disconnect_camera_button = QPushButton("Disconnect Camera")
-        self.disconnect_camera_button.clicked.connect(self.on_disconnect_camera_clicked)
-        self.disconnect_camera_button.setEnabled(False)
+        self.connect_camera_button = ttk.Button(cam_button_frame, text="Connect Camera", 
+                                              command=self.on_connect_camera_clicked)
+        self.connect_camera_button.pack(side=tk.LEFT, padx=5)
         
-        camera_button_layout.addWidget(self.connect_camera_button)
-        camera_button_layout.addWidget(self.disconnect_camera_button)
+        self.disconnect_camera_button = ttk.Button(cam_button_frame, text="Disconnect Camera", 
+                                                 command=self.on_disconnect_camera_clicked)
+        self.disconnect_camera_button.pack(side=tk.LEFT, padx=5)
+        self.disconnect_camera_button.state(['disabled'])
         
-        camera_layout.addLayout(camera_button_layout)
-        
-        layout.addWidget(camera_group)
-        
-        # GPS settings
-        gps_group = QGroupBox("GPS Settings")
-        gps_layout = QVBoxLayout(gps_group)
+        # GPS settings tab
+        gps_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(gps_tab, text="GPS")
         
         # GPS port
-        port_layout = QHBoxLayout()
-        port_layout.addWidget(QLabel("Port:"))
+        port_frame = ttk.Frame(gps_tab)
+        port_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.gps_port_edit = QLineEdit(self.settings["gps"]["port"])
-        port_layout.addWidget(self.gps_port_edit)
+        ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
         
-        port_layout.addWidget(QLabel("Baud Rate:"))
+        port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
+        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        self.gps_baud_combo = QComboBox()
-        self.gps_baud_combo.addItems(["4800", "9600", "19200", "38400", "57600", "115200"])
-        self.gps_baud_combo.setCurrentText(str(self.settings["gps"]["baud_rate"]))
+        ttk.Label(port_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
-        port_layout.addWidget(self.gps_baud_combo)
+        baud_combo = ttk.Combobox(port_frame, textvariable=self.gps_baud_var, 
+                                 values=[4800, 9600, 19200, 38400, 57600, 115200], 
+                                 state="readonly", width=10)
+        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        gps_layout.addLayout(port_layout)
+        # GPS connect buttons
+        gps_button_frame = ttk.Frame(gps_tab)
+        gps_button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # GPS connect button
-        gps_button_layout = QHBoxLayout()
+        self.connect_gps_button = ttk.Button(gps_button_frame, text="Connect GPS", 
+                                           command=self.on_connect_gps_clicked)
+        self.connect_gps_button.pack(side=tk.LEFT, padx=5)
         
-        self.connect_gps_button = QPushButton("Connect GPS")
-        self.connect_gps_button.clicked.connect(self.on_connect_gps_clicked)
+        self.disconnect_gps_button = ttk.Button(gps_button_frame, text="Disconnect GPS", 
+                                              command=self.on_disconnect_gps_clicked)
+        self.disconnect_gps_button.pack(side=tk.LEFT, padx=5)
+        self.disconnect_gps_button.state(['disabled'])
         
-        self.disconnect_gps_button = QPushButton("Disconnect GPS")
-        self.disconnect_gps_button.clicked.connect(self.on_disconnect_gps_clicked)
-        self.disconnect_gps_button.setEnabled(False)
+        # Save button
+        save_frame = ttk.Frame(self.settings_tab)
+        save_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        gps_button_layout.addWidget(self.connect_gps_button)
-        gps_button_layout.addWidget(self.disconnect_gps_button)
-        
-        gps_layout.addLayout(gps_button_layout)
-        
-        layout.addWidget(gps_group)
-        
-        # Save settings button
-        self.save_settings_button = QPushButton("Save Settings")
-        self.save_settings_button.clicked.connect(self.on_save_settings_clicked)
-        
-        layout.addWidget(self.save_settings_button)
-        
-    def setup_status_display(self, layout):
-        """Set up the status display area"""
-        status_layout = QHBoxLayout()
-        
-        # Camera status
-        self.camera_status_label = QLabel("Camera: Disconnected")
-        status_layout.addWidget(self.camera_status_label)
-        
-        # GPS status
-        self.gps_status_label = QLabel("GPS: Disconnected")
-        status_layout.addWidget(self.gps_status_label)
-        
-        # Capture status
-        self.capture_status_label = QLabel("Capture: Idle")
-        status_layout.addWidget(self.capture_status_label)
-        
-        # Capture count
-        self.capture_count_label = QLabel("Images: 0")
-        status_layout.addWidget(self.capture_count_label)
-        
-        layout.addLayout(status_layout)
+        save_button = ttk.Button(save_frame, text="Save Settings", 
+                               command=self.on_save_settings_clicked)
+        save_button.pack(side=tk.RIGHT, padx=5)
         
     def connect_devices(self):
         """Connect to camera and GPS devices on startup"""
@@ -373,102 +344,112 @@ class MainWindow(QMainWindow):
             
     def update_ui(self):
         """Update UI with current status (called by timer)"""
-        # Update camera status
-        if self.camera.is_connected:
-            self.camera_status_label.setText("Camera: Connected")
-            self.connect_camera_button.setEnabled(False)
-            self.disconnect_camera_button.setEnabled(True)
-            self.start_button.setEnabled(True)
-            self.single_capture_button.setEnabled(True)
-        else:
-            self.camera_status_label.setText("Camera: Disconnected")
-            self.connect_camera_button.setEnabled(True)
-            self.disconnect_camera_button.setEnabled(False)
-            self.start_button.setEnabled(False)
-            self.single_capture_button.setEnabled(False)
-            
-        # Update GPS status
-        if self.gps.is_connected:
-            gps_data = self.gps.get_current_data()
-            fix_status = "Fix" if self.gps.has_fix() else "No Fix"
-            sats = gps_data["satellites"] if gps_data["satellites"] else "?"
-            
-            self.gps_status_label.setText(f"GPS: Connected ({fix_status}, Sats: {sats})")
-            self.connect_gps_button.setEnabled(False)
-            self.disconnect_gps_button.setEnabled(True)
-        else:
-            self.gps_status_label.setText("GPS: Disconnected")
-            self.connect_gps_button.setEnabled(True)
-            self.disconnect_gps_button.setEnabled(False)
-            
-        # Update capture status if controller exists
-        if self.capture_controller:
-            if self.capture_controller.is_capturing:
-                stats = self.capture_controller.get_capture_stats()
-                
-                self.capture_status_label.setText(f"Capture: Active ({stats['mode']} mode)")
-                self.capture_count_label.setText(f"Images: {stats['capture_count']}")
-                
-                self.start_button.setEnabled(False)
-                self.stop_button.setEnabled(True)
-                self.single_capture_button.setEnabled(False)
+        try:
+            # Update camera status
+            if self.camera.is_connected:
+                self.camera_status_label.config(text="Camera: Connected")
+                self.connect_camera_button.state(['disabled'])
+                self.disconnect_camera_button.state(['!disabled'])
+                self.start_button.state(['!disabled'])
+                self.single_capture_button.state(['!disabled'])
             else:
-                self.capture_status_label.setText("Capture: Idle")
+                self.camera_status_label.config(text="Camera: Disconnected")
+                self.connect_camera_button.state(['!disabled'])
+                self.disconnect_camera_button.state(['disabled'])
+                self.start_button.state(['disabled'])
+                self.single_capture_button.state(['disabled'])
                 
-                self.start_button.setEnabled(self.camera.is_connected)
-                self.stop_button.setEnabled(False)
-                self.single_capture_button.setEnabled(self.camera.is_connected)
+            # Update GPS status
+            if self.gps.is_connected:
+                gps_data = self.gps.get_current_data()
+                fix_status = "Fix" if self.gps.has_fix() else "No Fix"
+                sats = gps_data["satellites"] if gps_data["satellites"] else "?"
                 
+                self.gps_status_label.config(text=f"GPS: Connected ({fix_status}, Sats: {sats})")
+                self.connect_gps_button.state(['disabled'])
+                self.disconnect_gps_button.state(['!disabled'])
+            else:
+                self.gps_status_label.config(text="GPS: Disconnected")
+                self.connect_gps_button.state(['!disabled'])
+                self.disconnect_gps_button.state(['disabled'])
+                
+            # Update capture status if controller exists
+            if self.capture_controller:
+                if self.capture_controller.is_capturing:
+                    stats = self.capture_controller.get_capture_stats()
+                    
+                    self.capture_status_label.config(text=f"Capture: Active ({stats['mode']} mode)")
+                    self.capture_count_label.config(text=f"Images: {stats['capture_count']}")
+                    
+                    self.start_button.state(['disabled'])
+                    self.stop_button.state(['!disabled'])
+                    self.single_capture_button.state(['disabled'])
+                else:
+                    self.capture_status_label.config(text="Capture: Idle")
+                    
+                    if self.camera.is_connected:
+                        self.start_button.state(['!disabled'])
+                        self.single_capture_button.state(['!disabled'])
+                    else:
+                        self.start_button.state(['disabled'])
+                        self.single_capture_button.state(['disabled'])
+                        
+                    self.stop_button.state(['disabled'])
+        except Exception as e:
+            self.logger.error(f"Error updating UI: {e}")
+            
+        # Schedule the next update
+        self.root.after(500, self.update_ui)
+        
     def update_settings_from_ui(self):
         """Update settings dictionary from UI values"""
         # Capture settings
-        self.settings["capture_mode"] = "time" if self.time_mode_radio.isChecked() else "gps"
-        self.settings["time_interval"] = self.time_interval_spin.value()
-        self.settings["gps_interval"] = self.gps_interval_spin.value()
-        self.settings["output_directory"] = self.output_dir_edit.text()
+        self.settings["capture_mode"] = self.capture_mode_var.get()
+        self.settings["time_interval"] = self.time_interval_var.get()
+        self.settings["gps_interval"] = self.gps_interval_var.get()
+        self.settings["output_directory"] = self.output_dir_var.get()
         
         # Camera settings
-        self.settings["camera"]["mode"] = "auto" if self.camera_mode_combo.currentIndex() == 0 else "manual"
-        self.settings["camera"]["resolution"] = self.resolution_combo.currentText()
-        self.settings["camera"]["fps"] = int(self.fps_combo.currentText())
+        self.settings["camera"]["mode"] = self.camera_mode_var.get()
+        self.settings["camera"]["resolution"] = self.resolution_var.get()
+        self.settings["camera"]["fps"] = self.fps_var.get()
         
         # Camera parameters
-        for name, widgets in self.camera_sliders.items():
-            if widgets["auto"] and widgets["auto"].isChecked():
+        for name, vars_dict in self.camera_settings_vars.items():
+            if "auto" in vars_dict and vars_dict["auto"].get():
                 self.settings["camera"][name] = -1  # Auto mode
             else:
-                self.settings["camera"][name] = widgets["slider"].value()
+                self.settings["camera"][name] = vars_dict["value"].get()
                 
         # GPS settings
-        self.settings["gps"]["port"] = self.gps_port_edit.text()
-        self.settings["gps"]["baud_rate"] = int(self.gps_baud_combo.currentText())
+        self.settings["gps"]["port"] = self.gps_port_var.get()
+        self.settings["gps"]["baud_rate"] = self.gps_baud_var.get()
         
         return self.settings
         
-    @pyqtSlot()
     def on_connect_camera_clicked(self):
         """Connect to ZED camera"""
         settings = self.update_settings_from_ui()
         
-        self.status_bar.showMessage("Connecting to camera...")
+        self.root.title("ZED Camera Capture Tool - Connecting to camera...")
+        self.root.update()
+        
         success = self.camera.connect(settings)
         
         if success:
-            self.status_bar.showMessage("Camera connected successfully", 3000)
+            self.root.title("ZED Camera Capture Tool")
             
             # Initialize capture controller if not already
             if not self.capture_controller:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
                 
-            # Enable camera-related UI elements
-            self.update_ui()
             return True
         else:
-            self.status_bar.showMessage("Failed to connect to camera", 3000)
-            QMessageBox.warning(self, "Connection Error", "Failed to connect to ZED camera. Please check connections and settings.")
+            self.root.title("ZED Camera Capture Tool")
+            messagebox.showerror("Connection Error", 
+                               "Failed to connect to ZED camera. Please check connections and settings.")
             return False
             
-    @pyqtSlot()
     def on_disconnect_camera_clicked(self):
         """Disconnect from ZED camera"""
         # Stop capture if running
@@ -476,53 +457,48 @@ class MainWindow(QMainWindow):
             self.capture_controller.stop_capture()
             
         self.camera.disconnect()
-        self.status_bar.showMessage("Camera disconnected", 3000)
-        self.update_ui()
         
-    @pyqtSlot()
     def on_connect_gps_clicked(self):
         """Connect to GPS receiver"""
         settings = self.update_settings_from_ui()
         
-        self.status_bar.showMessage("Connecting to GPS...")
+        self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
+        self.root.update()
+        
         success = self.gps.connect(settings)
         
         if success:
-            self.status_bar.showMessage("GPS connected successfully", 3000)
+            self.root.title("ZED Camera Capture Tool")
             
             # Initialize capture controller if not already
             if not self.capture_controller and self.camera.is_connected:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
                 
-            self.update_ui()
             return True
         else:
-            self.status_bar.showMessage("Failed to connect to GPS", 3000)
-            QMessageBox.warning(self, "Connection Error", "Failed to connect to GPS. Please check connections and port settings.")
+            self.root.title("ZED Camera Capture Tool")
+            messagebox.showerror("Connection Error", 
+                               "Failed to connect to GPS. Please check connections and port settings.")
             return False
             
-    @pyqtSlot()
     def on_disconnect_gps_clicked(self):
         """Disconnect from GPS receiver"""
         # Stop capture if running in GPS mode
         if (self.capture_controller and 
             self.capture_controller.is_capturing and 
-            self.capture_controller.settings["capture_mode"] == "gps"):
+            self.settings["capture_mode"] == "gps"):
             self.capture_controller.stop_capture()
             
         self.gps.disconnect()
-        self.status_bar.showMessage("GPS disconnected", 3000)
-        self.update_ui()
         
-    @pyqtSlot()
     def on_start_capture_clicked(self):
         """Start capture process"""
         if not self.camera.is_connected:
-            QMessageBox.warning(self, "Error", "Camera not connected")
+            messagebox.showerror("Error", "Camera not connected")
             return
             
         if self.settings["capture_mode"] == "gps" and not self.gps.is_connected:
-            QMessageBox.warning(self, "Error", "GPS not connected. Required for GPS-based capture.")
+            messagebox.showerror("Error", "GPS not connected. Required for GPS-based capture.")
             return
             
         # Update settings from UI
@@ -530,26 +506,20 @@ class MainWindow(QMainWindow):
         
         # Start capture
         if self.capture_controller.start_capture(settings):
-            self.status_bar.showMessage(f"Started capture in {settings['capture_mode']} mode", 3000)
+            self.root.title(f"ZED Camera Capture Tool - Capturing ({settings['capture_mode']} mode)")
         else:
-            QMessageBox.warning(self, "Error", "Failed to start capture")
+            messagebox.showerror("Error", "Failed to start capture")
             
-        self.update_ui()
-        
-    @pyqtSlot()
     def on_stop_capture_clicked(self):
         """Stop capture process"""
         if self.capture_controller:
             self.capture_controller.stop_capture()
-            self.status_bar.showMessage("Capture stopped", 3000)
+            self.root.title("ZED Camera Capture Tool")
             
-        self.update_ui()
-        
-    @pyqtSlot()
     def on_single_capture_clicked(self):
         """Capture a single image"""
         if not self.camera.is_connected:
-            QMessageBox.warning(self, "Error", "Camera not connected")
+            messagebox.showerror("Error", "Camera not connected")
             return
             
         # Update settings from UI
@@ -564,85 +534,87 @@ class MainWindow(QMainWindow):
         success = self.capture_controller._capture_image(output_dir)
         
         if success:
-            self.status_bar.showMessage("Image captured successfully", 3000)
-            self.capture_count_label.setText(f"Images: {self.capture_controller.capture_count}")
+            self.capture_count_label.config(text=f"Images: {self.capture_controller.capture_count}")
         else:
-            QMessageBox.warning(self, "Error", "Failed to capture image")
+            messagebox.showerror("Error", "Failed to capture image")
             
-    @pyqtSlot()
     def on_browse_clicked(self):
         """Open file dialog to select output directory"""
-        current_dir = self.output_dir_edit.text()
+        current_dir = self.output_dir_var.get()
         
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select Output Directory", current_dir,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        directory = filedialog.askdirectory(
+            initialdir=current_dir,
+            title="Select Output Directory"
         )
         
         if directory:
-            self.output_dir_edit.setText(directory)
-            self.settings["output_directory"] = directory
+            self.output_dir_var.set(directory)
             
-    @pyqtSlot(bool)
-    def on_capture_mode_changed(self, checked):
+    def on_capture_mode_changed(self):
         """Handle capture mode radio button changes"""
-        if checked:
-            if self.time_mode_radio.isChecked():
-                self.settings["capture_mode"] = "time"
-                self.time_interval_spin.setEnabled(True)
-                self.gps_interval_spin.setEnabled(False)
-            else:
-                self.settings["capture_mode"] = "gps"
-                self.time_interval_spin.setEnabled(False)
-                self.gps_interval_spin.setEnabled(True)
+        mode = self.capture_mode_var.get()
+        if mode == "time":
+            self.settings["capture_mode"] = "time"
+        else:
+            self.settings["capture_mode"] = "gps"
                 
-    @pyqtSlot(int)
-    def on_camera_mode_changed(self, index):
+    def on_camera_mode_changed(self, event=None):
         """Handle camera mode combobox changes"""
-        is_manual = index == 1
+        is_manual = (self.camera_mode_var.get() == "manual")
         
         # Enable/disable manual sliders based on mode
-        for name, widgets in self.camera_sliders.items():
+        for name, widgets in self.camera_setting_widgets.items():
             # For settings with auto option
             if widgets["auto"]:
-                widgets["auto"].setEnabled(is_manual)
-                widgets["slider"].setEnabled(is_manual and not widgets["auto"].isChecked())
+                if is_manual:
+                    widgets["auto"].state(['!disabled'])
+                    if not self.camera_settings_vars[name]["auto"].get():
+                        widgets["scale"].state(['!disabled'])
+                    else:
+                        widgets["scale"].state(['disabled'])
+                else:
+                    widgets["auto"].state(['disabled'])
+                    widgets["scale"].state(['disabled'])
             else:
-                widgets["slider"].setEnabled(is_manual)
+                if is_manual:
+                    widgets["scale"].state(['!disabled'])
+                else:
+                    widgets["scale"].state(['disabled'])
                 
         self.settings["camera"]["mode"] = "manual" if is_manual else "auto"
         
-    @pyqtSlot()
     def on_save_settings_clicked(self):
         """Save current settings"""
         settings = self.update_settings_from_ui()
         
         if save_settings(settings):
-            self.status_bar.showMessage("Settings saved successfully", 3000)
+            messagebox.showinfo("Success", "Settings saved successfully")
         else:
-            self.status_bar.showMessage("Failed to save settings", 3000)
+            messagebox.showerror("Error", "Failed to save settings")
             
-    @pyqtSlot(str, int, QLabel)
-    def on_slider_value_changed(self, name, value, label):
+    def on_scale_value_changed(self, name, value):
         """Handle slider value changes"""
-        label.setText(str(value))
-        self.settings["camera"][name] = value
+        try:
+            # Convert from string to float to int
+            value = int(float(value))
+            self.camera_setting_widgets[name]["label"].config(text=str(value))
+            self.camera_settings_vars[name]["value"].set(value)
+        except Exception as e:
+            self.logger.error(f"Error updating scale value: {e}")
         
-    @pyqtSlot(str, int)
-    def on_auto_checkbox_changed(self, name, state):
+    def on_auto_checkbox_changed(self, name):
         """Handle auto checkbox changes"""
-        is_checked = state == Qt.Checked
+        is_checked = self.camera_settings_vars[name]["auto"].get()
         
         # Enable/disable slider based on auto checkbox
-        self.camera_sliders[name]["slider"].setEnabled(not is_checked)
-        
-        # Update settings
         if is_checked:
+            self.camera_setting_widgets[name]["scale"].state(['disabled'])
             self.settings["camera"][name] = -1  # -1 indicates auto mode
         else:
-            self.settings["camera"][name] = self.camera_sliders[name]["slider"].value()
+            self.camera_setting_widgets[name]["scale"].state(['!disabled'])
+            self.settings["camera"][name] = self.camera_settings_vars[name]["value"].get()
             
-    def closeEvent(self, event):
+    def on_closing(self):
         """Handle window close event"""
         # Stop any active processes
         if self.capture_controller and self.capture_controller.is_capturing:
@@ -656,5 +628,5 @@ class MainWindow(QMainWindow):
         self.update_settings_from_ui()
         save_settings(self.settings)
         
-        # Accept the close event
-        event.accept()
+        # Destroy window
+        self.root.destroy()

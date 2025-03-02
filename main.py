@@ -9,7 +9,7 @@ with options for time interval or GPS location-based capture.
 import sys
 import os
 import logging
-from PyQt5.QtWidgets import QApplication
+import tkinter as tk
 from ui.main_window import MainWindow
 from config import setup_logging
 
@@ -18,16 +18,18 @@ def main():
     # Setup logging
     setup_logging()
     
-    # Create Qt application
-    app = QApplication(sys.argv)
-    app.setApplicationName("ZED Camera Capture Tool")
+    # Create Tkinter root
+    root = tk.Tk()
+    root.title("ZED Camera Capture Tool")
     
-    # Create and show main window
-    main_window = MainWindow()
-    main_window.show()
+    # Create main window
+    app = MainWindow(root)
     
-    # Start application event loop
-    sys.exit(app.exec_())
+    # Set up close handler
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    
+    # Start Tkinter event loop
+    root.mainloop()
 
 if __name__ == "__main__":
     main()

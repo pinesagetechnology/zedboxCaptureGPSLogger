@@ -1,5 +1,6 @@
+#!/usr/bin/env python3
 """
-UI module for ZED Camera Capture Tool.
+Main UI module entry for ZED Camera Capture Tool.
 """
 
 from .main_window import MainWindow
