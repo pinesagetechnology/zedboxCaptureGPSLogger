@@ -94,6 +94,11 @@ class MainWindow:
         self.notebook.add(self.video_tab, text="Video Recording")
         self.setup_video_tab()
         
+        # GPS tab
+        self.gps_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.gps_tab, text="GPS Monitor")
+        self.setup_gps_tab()
+        
         # Settings tab
         self.settings_tab = ttk.Frame(self.notebook)
         self.notebook.add(self.settings_tab, text="Settings")
@@ -994,3 +999,286 @@ class MainWindow:
         
         # Destroy window
         self.root.destroy()
+    def setup_gps_tab(self):
+        """Set up the GPS testing and monitoring tab"""
+        
+        # Main frame
+        main_frame = ttk.Frame(self.gps_tab)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # GPS Connection Frame
+        conn_frame = ttk.LabelFrame(main_frame, text="GPS Connection")
+        conn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Port and baud rate
+        settings_frame = ttk.Frame(conn_frame)
+        settings_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(settings_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Default to ttyACM0 for your setup
+        self.gps_port_var.set("/dev/ttyACM0")
+        port_entry = ttk.Entry(settings_frame, textvariable=self.gps_port_var, width=20)
+        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        ttk.Label(settings_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        
+        baud_combo = ttk.Combobox(settings_frame, textvariable=self.gps_baud_var, 
+                                values=[4800, 9600, 19200, 38400, 57600, 115200], 
+                                state="readonly", width=10)
+        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
+        
+        # Connect buttons
+        button_frame = ttk.Frame(conn_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.gps_connect_button = ttk.Button(button_frame, text="Connect GPS", 
+                                        command=self.on_gps_connect_clicked)
+        self.gps_connect_button.pack(side=tk.LEFT, padx=5)
+        
+        self.gps_disconnect_button = ttk.Button(button_frame, text="Disconnect GPS", 
+                                            command=self.on_gps_disconnect_clicked)
+        self.gps_disconnect_button.pack(side=tk.LEFT, padx=5)
+        self.gps_disconnect_button.state(['disabled'])
+        
+        self.gps_test_button = ttk.Button(button_frame, text="Test GPS Signal", 
+                                        command=self.on_test_gps_clicked)
+        self.gps_test_button.pack(side=tk.LEFT, padx=5)
+        self.gps_test_button.state(['disabled'])
+        
+        # GPS Status Frame
+        status_frame = ttk.LabelFrame(main_frame, text="GPS Status")
+        status_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Status grid - show key GPS data
+        self.gps_status_grid = ttk.Frame(status_frame)
+        self.gps_status_grid.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create status labels
+        status_labels = [
+            ("Connection Status:", "Not Connected", "gps_connection_status"),
+            ("Fix Type:", "No Fix", "gps_fix_type"),
+            ("Satellites:", "0", "gps_satellites"),
+            ("Latitude:", "N/A", "gps_latitude"),
+            ("Longitude:", "N/A", "gps_longitude"),
+            ("Altitude:", "N/A", "gps_altitude"),
+            ("Speed:", "N/A", "gps_speed"),
+            ("Time:", "N/A", "gps_time")
+        ]
+        
+        self.gps_status_labels = {}
+        
+        for i, (label_text, default_value, variable_name) in enumerate(status_labels):
+            ttk.Label(self.gps_status_grid, text=label_text).grid(row=i, column=0, sticky=tk.W, pady=2)
+            label = ttk.Label(self.gps_status_grid, text=default_value)
+            label.grid(row=i, column=1, sticky=tk.W, pady=2, padx=5)
+            self.gps_status_labels[variable_name] = label
+        
+        # Raw NMEA data display
+        nmea_frame = ttk.LabelFrame(main_frame, text="Raw NMEA Data")
+        nmea_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Text widget with scrollbar for NMEA sentences
+        self.nmea_text = tk.Text(nmea_frame, height=8, width=80, wrap=tk.WORD)
+        self.nmea_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        scrollbar = ttk.Scrollbar(nmea_frame, orient="vertical", command=self.nmea_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.nmea_text.config(yscrollcommand=scrollbar.set)
+        
+        # Button to clear NMEA log
+        clear_button = ttk.Button(nmea_frame, text="Clear Log", 
+                                command=lambda: self.nmea_text.delete(1.0, tk.END))
+        clear_button.pack(pady=5)
+
+    def on_gps_connect_clicked(self):
+        """Connect to GPS receiver from GPS tab"""
+        settings = self.update_settings_from_ui()
+        
+        self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
+        self.root.update()
+        
+        # Update UI immediately to show trying to connect
+        self.gps_status_labels["gps_connection_status"].config(text="Connecting...")
+        self.gps_status_labels["gps_connection_status"].config(foreground="orange")
+        self.root.update()
+        
+        # Enable verbose logging for connection
+        old_level = logging.getLogger("GPSReceiver").level
+        logging.getLogger("GPSReceiver").setLevel(logging.DEBUG)
+        
+        # Connect to GPS
+        success = self.gps.connect(settings)
+        
+        # Reset logging level
+        logging.getLogger("GPSReceiver").setLevel(old_level)
+        
+        if success:
+            self.root.title("ZED Camera Capture Tool")
+            
+            # Initialize capture controller if not already and camera is connected
+            if not self.capture_controller and self.camera.is_connected:
+                self.capture_controller = CaptureController(self.camera, self.gps, settings)
+                
+            # Update GPS status labels
+            self.gps_status_labels["gps_connection_status"].config(text="Connected")
+            self.gps_status_labels["gps_connection_status"].config(foreground="green")
+            
+            # Update UI
+            self.gps_connect_button.state(['disabled'])
+            self.gps_disconnect_button.state(['!disabled'])
+            self.gps_test_button.state(['!disabled'])
+            
+            # Start GPS monitoring
+            self.start_gps_monitoring()
+            
+            return True
+        else:
+            self.root.title("ZED Camera Capture Tool")
+            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed")
+            self.gps_status_labels["gps_connection_status"].config(foreground="red")
+            
+            messagebox.showerror("Connection Error", 
+                            "Failed to connect to GPS on " + settings["gps"]["port"] + 
+                            ". Please check connections and port settings.")
+            return False
+
+    def on_gps_disconnect_clicked(self):
+        """Disconnect from GPS receiver from GPS tab"""
+        # Stop capture if running in GPS mode
+        if (self.capture_controller and 
+            self.capture_controller.is_capturing and 
+            self.settings["capture_mode"] == "gps"):
+            self.capture_controller.stop_capture()
+            
+        # Stop GPS monitoring
+        self.stop_gps_monitoring()
+        
+        # Disconnect GPS
+        self.gps.disconnect()
+        
+        # Update GPS status labels
+        self.gps_status_labels["gps_connection_status"].config(text="Disconnected")
+        self.gps_status_labels["gps_connection_status"].config(foreground="")
+        
+        # Reset other status labels
+        for key in ["gps_fix_type", "gps_satellites", "gps_latitude", "gps_longitude", 
+                "gps_altitude", "gps_speed", "gps_time"]:
+            self.gps_status_labels[key].config(text="N/A")
+        
+        # Update UI
+        self.gps_connect_button.state(['!disabled'])
+        self.gps_disconnect_button.state(['disabled'])
+        self.gps_test_button.state(['disabled'])
+
+    def on_test_gps_clicked(self):
+        """Test GPS connection and show detailed information"""
+        if not self.gps.is_connected:
+            messagebox.showerror("Error", "GPS not connected")
+            return
+            
+        # Read several NMEA sentences
+        try:
+            raw_data = []
+            if self.gps.serial_port and self.gps.serial_port.is_open:
+                self.nmea_text.insert(tk.END, "--- Testing GPS Connection ---\n")
+                
+                timeout = time.time() + 5  # 5 second timeout
+                while time.time() < timeout and len(raw_data) < 10:
+                    if self.gps.serial_port.in_waiting:
+                        line = self.gps.serial_port.readline().decode('ascii', errors='replace').strip()
+                        if line:
+                            raw_data.append(line)
+                            self.nmea_text.insert(tk.END, line + "\n")
+                            self.nmea_text.see(tk.END)
+                            self.root.update()
+                    time.sleep(0.1)
+                    
+                if not raw_data:
+                    self.nmea_text.insert(tk.END, "No data received from GPS. Check connections.\n")
+                else:
+                    self.nmea_text.insert(tk.END, f"Received {len(raw_data)} NMEA sentences.\n")
+                    
+                self.nmea_text.insert(tk.END, "--- Test Complete ---\n\n")
+                self.nmea_text.see(tk.END)
+        except Exception as e:
+            self.nmea_text.insert(tk.END, f"Error testing GPS: {e}\n")
+            self.logger.error(f"Error testing GPS: {e}")
+
+    def start_gps_monitoring(self):
+        """Start monitoring GPS data updates"""
+        if not hasattr(self, 'gps_monitor_running'):
+            self.gps_monitor_running = True
+            self.update_gps_status()
+            
+    def stop_gps_monitoring(self):
+        """Stop GPS monitoring"""
+        self.gps_monitor_running = False
+        
+    def update_gps_status(self):
+        """Update GPS status display with latest data"""
+        if not self.gps_monitor_running:
+            return
+            
+        if self.gps.is_connected:
+            try:
+                # Get current GPS data
+                gps_data = self.gps.get_current_data()
+                
+                # Update fix type
+                if self.gps.has_fix():
+                    fix_type = "3D Fix" if gps_data["altitude"] is not None else "2D Fix"
+                    self.gps_status_labels["gps_fix_type"].config(text=fix_type)
+                    self.gps_status_labels["gps_fix_type"].config(foreground="green")
+                else:
+                    self.gps_status_labels["gps_fix_type"].config(text="No Fix")
+                    self.gps_status_labels["gps_fix_type"].config(foreground="red")
+                    
+                # Update satellite count
+                sat_count = gps_data["satellites"] if gps_data["satellites"] is not None else "0"
+                self.gps_status_labels["gps_satellites"].config(text=str(sat_count))
+                
+                # Update coordinates if available
+                if gps_data["latitude"] is not None and gps_data["longitude"] is not None:
+                    lat = f"{gps_data['latitude']:.6f}° N" if gps_data['latitude'] >= 0 else f"{-gps_data['latitude']:.6f}° S"
+                    lon = f"{gps_data['longitude']:.6f}° E" if gps_data['longitude'] >= 0 else f"{-gps_data['longitude']:.6f}° W"
+                    
+                    self.gps_status_labels["gps_latitude"].config(text=lat)
+                    self.gps_status_labels["gps_longitude"].config(text=lon)
+                else:
+                    self.gps_status_labels["gps_latitude"].config(text="N/A")
+                    self.gps_status_labels["gps_longitude"].config(text="N/A")
+                    
+                # Update altitude if available
+                if gps_data["altitude"] is not None:
+                    self.gps_status_labels["gps_altitude"].config(text=f"{gps_data['altitude']:.1f} m")
+                else:
+                    self.gps_status_labels["gps_altitude"].config(text="N/A")
+                    
+                # Update speed if available
+                if gps_data["speed"] is not None:
+                    self.gps_status_labels["gps_speed"].config(text=f"{gps_data['speed']:.1f} km/h")
+                else:
+                    self.gps_status_labels["gps_speed"].config(text="N/A")
+                    
+                # Update time if available
+                if gps_data["timestamp"] is not None:
+                    self.gps_status_labels["gps_time"].config(text=gps_data["timestamp"])
+                else:
+                    self.gps_status_labels["gps_time"].config(text="N/A")
+                    
+                # Add NMEA data if new data is available
+                if hasattr(self.gps, 'last_raw_nmea') and self.gps.last_raw_nmea:
+                    self.nmea_text.insert(tk.END, self.gps.last_raw_nmea + "\n")
+                    self.nmea_text.see(tk.END)
+                    
+                    # Keep text widget from growing too large
+                    if float(self.nmea_text.index('end-1c').split('.')[0]) > 100:
+                        self.nmea_text.delete(1.0, "end-100c")
+                        
+            except Exception as e:
+                self.logger.error(f"Error updating GPS status: {e}")
+                
+        # Schedule next update
+        if self.gps_monitor_running:
+            self.root.after(1000, self.update_gps_status)  # Update every second

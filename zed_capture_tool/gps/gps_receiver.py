@@ -47,7 +47,29 @@ class GPSReceiver:
             baud_rate = settings["gps"]["baud_rate"]
             timeout = settings["gps"]["timeout"]
             
+            self.logger.info(f"Attempting to connect to GPS on {port} at {baud_rate} baud")
+            
+            # Try opening the port
             self.serial_port = serial.Serial(port, baud_rate, timeout=timeout)
+            
+            # Test if data is coming through
+            initial_data = []
+            for _ in range(5):  # Try to read 5 lines
+                if self.serial_port.in_waiting:
+                    line = self.serial_port.readline().decode('ascii', errors='replace').strip()
+                    if line:
+                        initial_data.append(line)
+                        self.logger.debug(f"GPS initial data: {line}")
+                time.sleep(0.2)
+            
+            if not initial_data:
+                self.logger.warning(f"No initial data received from GPS on {port}")
+            else:
+                self.logger.info(f"Received {len(initial_data)} lines of initial GPS data")
+                
+            # Add last raw NMEA storage
+            self.last_raw_nmea = None
+            
             self.is_connected = True
             
             # Start the reading thread
@@ -85,44 +107,48 @@ class GPSReceiver:
             try:
                 line = self.serial_port.readline().decode('ascii', errors='replace').strip()
                 
-                if line.startswith('$'):
-                    try:
-                        msg = pynmea2.parse(line)
-                        
-                        # Parse different NMEA sentence types
-                        if isinstance(msg, pynmea2.GGA):
-                            # Global Positioning System Fix Data
-                            self.current_data["latitude"] = msg.latitude
-                            self.current_data["longitude"] = msg.longitude
-                            self.current_data["altitude"] = msg.altitude
-                            self.current_data["fix_quality"] = msg.gps_qual
-                            self.current_data["satellites"] = msg.num_sats
-                            self.current_data["hdop"] = msg.horizontal_dil
+                if line:
+                    # Store raw NMEA sentence
+                    self.last_raw_nmea = line
+                    
+                    if line.startswith('$'):
+                        try:
+                            msg = pynmea2.parse(line)
                             
-                            if msg.timestamp:
-                                timestamp = datetime.combine(
-                                    datetime.now().date(),
-                                    msg.timestamp
-                                )
-                                self.current_data["timestamp"] = timestamp.isoformat()
+                            # Parse different NMEA sentence types
+                            if isinstance(msg, pynmea2.GGA):
+                                # Global Positioning System Fix Data
+                                self.current_data["latitude"] = msg.latitude
+                                self.current_data["longitude"] = msg.longitude
+                                self.current_data["altitude"] = msg.altitude
+                                self.current_data["fix_quality"] = msg.gps_qual
+                                self.current_data["satellites"] = msg.num_sats
+                                self.current_data["hdop"] = msg.horizontal_dil
                                 
-                        elif isinstance(msg, pynmea2.RMC):
-                            # Recommended Minimum Navigation Information
-                            self.current_data["latitude"] = msg.latitude
-                            self.current_data["longitude"] = msg.longitude
-                            self.current_data["speed"] = msg.spd_over_grnd * 1.852  # Convert knots to km/h
-                            
-                            if msg.datestamp and msg.timestamp:
-                                timestamp = datetime.combine(msg.datestamp, msg.timestamp)
-                                self.current_data["timestamp"] = timestamp.isoformat()
+                                if msg.timestamp:
+                                    timestamp = datetime.combine(
+                                        datetime.now().date(),
+                                        msg.timestamp
+                                    )
+                                    self.current_data["timestamp"] = timestamp.isoformat()
+                                    
+                            elif isinstance(msg, pynmea2.RMC):
+                                # Recommended Minimum Navigation Information
+                                self.current_data["latitude"] = msg.latitude
+                                self.current_data["longitude"] = msg.longitude
+                                self.current_data["speed"] = msg.spd_over_grnd * 1.852  # Convert knots to km/h
                                 
-                        # Update last position for distance calculation if we have valid coordinates
-                        if self.current_data["latitude"] is not None and self.current_data["longitude"] is not None:
-                            self.last_position = (self.current_data["latitude"], self.current_data["longitude"])
+                                if msg.datestamp and msg.timestamp:
+                                    timestamp = datetime.combine(msg.datestamp, msg.timestamp)
+                                    self.current_data["timestamp"] = timestamp.isoformat()
+                                    
+                            # Update last position for distance calculation if we have valid coordinates
+                            if self.current_data["latitude"] is not None and self.current_data["longitude"] is not None:
+                                self.last_position = (self.current_data["latitude"], self.current_data["longitude"])
+                                
+                        except pynmea2.ParseError:
+                            pass  # Ignore parse errors
                             
-                    except pynmea2.ParseError:
-                        pass  # Ignore parse errors
-                        
             except Exception as e:
                 self.logger.error(f"Error reading GPS data: {e}")
                 time.sleep(0.1)  # Prevent tight loop on error
