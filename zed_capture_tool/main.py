@@ -11,7 +11,7 @@ import os
 import logging
 import tkinter as tk
 from .ui.main_window import MainWindow
-from config import setup_logging
+from zed_capture_tool.config import setup_logging
 
 def main():
     """Main application entry point"""
