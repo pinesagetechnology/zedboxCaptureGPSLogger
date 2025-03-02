@@ -23,12 +23,27 @@ class ZedCamera:
         "VGA": sl.RESOLUTION.VGA
     }
     
+    # View types mapping
+    VIEW_TYPES = {
+        "rgb": sl.VIEW.LEFT,
+        "right": sl.VIEW.RIGHT,
+        "depth": sl.VIEW.DEPTH,
+        "disparity": sl.VIEW.DISPARITY,
+        "confidence": sl.VIEW.CONFIDENCE
+    }
+    
     def __init__(self):
         self.camera = sl.Camera()
         self.init_params = sl.InitParameters()
         self.runtime_params = sl.RuntimeParameters()
         self.is_connected = False
         self.logger = logging.getLogger("ZedCamera")
+
+        # Store images for different view types
+        self.view_images = {}
+        
+        # Point cloud handling
+        self.point_cloud = sl.Mat()
         
     def connect(self, settings):
         """Connect to the ZED camera with the specified settings"""
@@ -39,7 +54,16 @@ class ZedCamera:
             # For ZED X, only HD1080 is supported based on testing
             self.init_params.camera_resolution = sl.RESOLUTION.HD1080
             self.logger.info("Using HD1080 resolution for ZED X camera")
-                
+
+            # Enable depth and point cloud
+            self.init_params.depth_mode = sl.DEPTH_MODE.ULTRA  # Use ULTRA for best quality
+            self.init_params.coordinate_units = sl.UNIT.METER  # Use meters for depth
+            self.init_params.depth_minimum_distance = 0.3  # Minimum depth in meters
+            self.init_params.depth_maximum_distance = 20  # Maximum depth in meters
+            
+            # Configure depth sensing parameters (optional)
+            # self.init_params.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP
+
             # Set FPS (use requested FPS, but default to 15 which we know works)
             fps = settings["camera"]["fps"]
             self.init_params.camera_fps = 15  # Default to known working value
@@ -56,7 +80,11 @@ class ZedCamera:
             # Apply camera settings if in manual mode
             if settings["camera"]["mode"] == "manual":
                 self.apply_manual_settings(settings["camera"])
-                    
+
+            # Initialize the image containers for each view type
+            for view_name in self.VIEW_TYPES:
+                self.view_images[view_name] = sl.Mat()
+
             self.is_connected = True
             self.logger.info(f"Connected to ZED camera: {self.camera.get_camera_information().serial_number}")
             return True
@@ -65,6 +93,43 @@ class ZedCamera:
             self.logger.error(f"Error connecting to camera: {e}")
             return False
             
+    def get_current_frame(self, view_types=None):
+        """
+        Get the current frame from the camera in multiple view types
+        
+        Args:
+            view_types: List of view types to retrieve (e.g., ["rgb", "depth", "disparity"]) or None for all views
+            
+        Returns:
+            dict: Dictionary of view_type: image_data pairs
+        """
+        if not self.is_connected:
+            return None
+            
+        if view_types is None:
+            # Default to get just the RGB image
+            view_types = ["rgb"]
+            
+        result = {}
+        
+        try:
+            # Grab frame
+            if self.camera.grab(self.runtime_params) == sl.ERROR_CODE.SUCCESS:
+                # Retrieve all requested view types
+                for view_name in view_types:
+                    if view_name in self.VIEW_TYPES:
+                        self.camera.retrieve_image(self.view_images[view_name], self.VIEW_TYPES[view_name])
+                        # Get numpy array and store in result
+                        result[view_name] = self.view_images[view_name].get_data()
+                    elif view_name == "point_cloud":
+                        # Special handling for point cloud
+                        self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
+                        result[view_name] = self.point_cloud.get_data()
+        except Exception as e:
+            self.logger.error(f"Error getting current frame: {e}")
+            
+        return result
+    
     def disconnect(self):
         """Disconnect from the ZED camera"""
         if self.is_connected:
@@ -123,21 +188,26 @@ class ZedCamera:
         """Get list of available resolutions"""
         return list(self.RESOLUTIONS.keys())
         
-    def capture_image(self, output_dir, file_prefix, metadata=None):
+    def capture_image(self, output_dir, file_prefix, metadata=None, view_types=None):
         """
-        Capture an image from the camera
+        Capture images from the camera
         
         Args:
-            output_dir: Directory to save the image
+            output_dir: Directory to save the images
             file_prefix: Prefix for the filename
             metadata: Dictionary containing metadata to save with the image
+            view_types: List of view types to capture (e.g., ["rgb", "depth", "disparity"]) or None for RGB only
             
         Returns:
-            tuple: (success, image_path)
+            tuple: (success, image_paths)
         """
         if not self.is_connected:
             self.logger.error("Cannot capture: Camera not connected")
             return False, None
+            
+        if view_types is None:
+            # Default to just RGB if not specified
+            view_types = ["rgb"]
             
         try:
             # Create output directory if it doesn't exist
@@ -146,33 +216,48 @@ class ZedCamera:
             
             # Generate filename with timestamp
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            image_filename = f"{file_prefix}_{timestamp}.png"
-            image_path = output_path / image_filename
+            image_paths = {}
             
-            # Create a ZED image object
-            image = sl.Mat()
-            
-            # Capture image
+            # Capture all view types
             if self.camera.grab(self.runtime_params) == sl.ERROR_CODE.SUCCESS:
-                # Retrieve image
-                self.camera.retrieve_image(image, sl.VIEW.LEFT)
-                
-                # Save image
-                image.write(str(image_path))
+                # Process each view type
+                for view_name in view_types:
+                    if view_name in self.VIEW_TYPES:
+                        # Generate filename for this view
+                        image_filename = f"{file_prefix}_{view_name}_{timestamp}.png"
+                        image_path = output_path / image_filename
+                        
+                        # Retrieve and save image
+                        self.camera.retrieve_image(self.view_images[view_name], self.VIEW_TYPES[view_name])
+                        self.view_images[view_name].write(str(image_path))
+                        image_paths[view_name] = str(image_path)
+                        
+                    elif view_name == "point_cloud":
+                        # Special handling for point cloud - save as PLY file
+                        cloud_filename = f"{file_prefix}_pointcloud_{timestamp}.ply"
+                        cloud_path = output_path / cloud_filename
+                        
+                        # Retrieve and save point cloud
+                        self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
+                        
+                        # Save as PLY - SDK already has this function
+                        self.camera.save_point_cloud(str(cloud_path))
+                        image_paths["point_cloud"] = str(cloud_path)
                 
                 # Save metadata if provided
                 if metadata:
-                    # Add filename and timestamp to metadata
-                    metadata["filename"] = image_filename
+                    # Add filenames and timestamp to metadata
+                    metadata["filenames"] = {k: os.path.basename(v) for k, v in image_paths.items()}
                     metadata["timestamp"] = timestamp
+                    metadata["view_types"] = view_types
                     
                     # Save metadata to file
-                    metadata_path = output_path / f"{file_prefix}_{timestamp}.json"
+                    metadata_path = output_path / f"{file_prefix}_metadata_{timestamp}.json"
                     with open(metadata_path, 'w') as f:
                         json.dump(metadata, f, indent=4)
                         
-                self.logger.info(f"Image captured and saved to {image_path}")
-                return True, str(image_path)
+                self.logger.info(f"Images captured and saved to {output_dir}")
+                return True, image_paths
             else:
                 self.logger.error("Failed to grab image from camera")
                 return False, None

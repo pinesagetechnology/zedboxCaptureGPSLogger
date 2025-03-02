@@ -121,15 +121,69 @@ class MainWindow:
         self.capture_count_label.pack(side=tk.LEFT, padx=5)
         
     def setup_capture_tab(self):
-        """Set up the capture tab UI"""
+        """Set up the capture tab UI with multiple camera views"""
         
-        # Preview area
+        # Preview area - Now with multiple views
         preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.preview_label = tk.Label(preview_frame, text="No preview available", bg="#222222", fg="white")
-        self.preview_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.preview_label.config(width=80, height=24)  # Text units for tk.Label
+        # Create a frame to hold all preview images
+        views_frame = ttk.Frame(preview_frame)
+        views_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create labels for each view type
+        self.preview_labels = {}
+        
+        # RGB View
+        rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
+        rgb_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        
+        self.preview_labels["rgb"] = tk.Label(rgb_frame, text="No RGB preview", bg="#222222", fg="white")
+        self.preview_labels["rgb"].pack(fill=tk.BOTH, expand=True)
+        
+        # Depth View
+        depth_frame = ttk.LabelFrame(views_frame, text="Depth Map")
+        depth_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        
+        self.preview_labels["depth"] = tk.Label(depth_frame, text="No depth preview", bg="#222222", fg="white")
+        self.preview_labels["depth"].pack(fill=tk.BOTH, expand=True)
+        
+        # Disparity View
+        disparity_frame = ttk.LabelFrame(views_frame, text="Disparity Map")
+        disparity_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        
+        self.preview_labels["disparity"] = tk.Label(disparity_frame, text="No disparity preview", bg="#222222", fg="white")
+        self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
+        
+        # Point Cloud View (optional)
+        point_cloud_frame = ttk.LabelFrame(views_frame, text="Point Cloud")
+        point_cloud_frame.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
+        
+        self.preview_labels["point_cloud"] = tk.Label(point_cloud_frame, text="No point cloud preview", bg="#222222", fg="white")
+        self.preview_labels["point_cloud"].pack(fill=tk.BOTH, expand=True)
+        
+        # Configure grid to expand properly
+        views_frame.columnconfigure(0, weight=1)
+        views_frame.columnconfigure(1, weight=1)
+        views_frame.rowconfigure(0, weight=1)
+        views_frame.rowconfigure(1, weight=1)
+        
+        # Capture mode selection
+        view_select_frame = ttk.Frame(preview_frame)
+        view_select_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(view_select_frame, text="Views to Capture:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        
+        # Checkboxes for selecting views to capture
+        self.capture_rgb_var = BooleanVar(value=True)
+        self.capture_depth_var = BooleanVar(value=False)
+        self.capture_disparity_var = BooleanVar(value=False)
+        self.capture_point_cloud_var = BooleanVar(value=False)
+        
+        ttk.Checkbutton(view_select_frame, text="RGB", variable=self.capture_rgb_var).grid(row=0, column=1, padx=5)
+        ttk.Checkbutton(view_select_frame, text="Depth", variable=self.capture_depth_var).grid(row=0, column=2, padx=5)
+        ttk.Checkbutton(view_select_frame, text="Disparity", variable=self.capture_disparity_var).grid(row=0, column=3, padx=5)
+        ttk.Checkbutton(view_select_frame, text="Point Cloud", variable=self.capture_point_cloud_var).grid(row=0, column=4, padx=5)
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
@@ -141,24 +195,24 @@ class MainWindow:
         
         # Time interval option
         time_radio = ttk.Radiobutton(mode_frame, text="Time Interval:", 
-                                     variable=self.capture_mode_var, value="time", 
-                                     command=self.on_capture_mode_changed)
+                                    variable=self.capture_mode_var, value="time", 
+                                    command=self.on_capture_mode_changed)
         time_radio.grid(row=0, column=0, sticky=tk.W)
         
         time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, 
-                               textvariable=self.time_interval_var)
+                                textvariable=self.time_interval_var)
         time_spin.grid(row=0, column=1, padx=5)
         
         ttk.Label(mode_frame, text="seconds").grid(row=0, column=2, sticky=tk.W)
         
         # GPS interval option
         gps_radio = ttk.Radiobutton(mode_frame, text="GPS Distance:", 
-                                   variable=self.capture_mode_var, value="gps", 
-                                   command=self.on_capture_mode_changed)
+                                    variable=self.capture_mode_var, value="gps", 
+                                    command=self.on_capture_mode_changed)
         gps_radio.grid(row=0, column=3, sticky=tk.W, padx=(20, 0))
         
         gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, 
-                              textvariable=self.gps_interval_var)
+                                textvariable=self.gps_interval_var)
         gps_spin.grid(row=0, column=4, padx=5)
         
         ttk.Label(mode_frame, text="meters").grid(row=0, column=5, sticky=tk.W)
@@ -182,17 +236,17 @@ class MainWindow:
         button_frame.pack(fill=tk.X, padx=10, pady=10)
         
         self.start_button = ttk.Button(button_frame, text="Start Capture", 
-                                      command=self.on_start_capture_clicked)
+                                        command=self.on_start_capture_clicked)
         self.start_button.pack(side=tk.LEFT, padx=5)
         self.start_button.state(['disabled'])  # Disabled until camera is connected
         
         self.stop_button = ttk.Button(button_frame, text="Stop Capture", 
-                                     command=self.on_stop_capture_clicked)
+                                        command=self.on_stop_capture_clicked)
         self.stop_button.pack(side=tk.LEFT, padx=5)
         self.stop_button.state(['disabled'])  # Disabled until capture starts
         
         self.single_capture_button = ttk.Button(button_frame, text="Single Capture", 
-                                              command=self.on_single_capture_clicked)
+                                                command=self.on_single_capture_clicked)
         self.single_capture_button.pack(side=tk.LEFT, padx=5)
         self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
         
@@ -455,6 +509,16 @@ class MainWindow:
         self.settings["gps_interval"] = self.gps_interval_var.get()
         self.settings["output_directory"] = self.output_dir_var.get()
         
+        # Add view type settings
+        if not "view_types" in self.settings:
+            self.settings["view_types"] = {}
+            
+        if hasattr(self, 'capture_rgb_var'):
+            self.settings["view_types"]["rgb"] = self.capture_rgb_var.get()
+            self.settings["view_types"]["depth"] = self.capture_depth_var.get()
+            self.settings["view_types"]["disparity"] = self.capture_disparity_var.get()
+            self.settings["view_types"]["point_cloud"] = self.capture_point_cloud_var.get()
+            
         # Camera settings
         self.settings["camera"]["mode"] = self.camera_mode_var.get()
         self.settings["camera"]["resolution"] = self.resolution_var.get()
@@ -571,7 +635,7 @@ class MainWindow:
             self.root.title("ZED Camera Capture Tool")
             
     def on_single_capture_clicked(self):
-        """Capture a single image"""
+        """Capture a single image with all selected view types"""
         if not self.camera.is_connected:
             messagebox.showerror("Error", "Camera not connected")
             return
@@ -583,15 +647,44 @@ class MainWindow:
         if not self.capture_controller:
             self.capture_controller = CaptureController(self.camera, self.gps, settings)
             
-        # Capture single image
+        # Get selected view types to capture
+        view_types = self.get_selected_view_types()
+        
+        if not view_types:
+            messagebox.showerror("Error", "No view types selected for capture")
+            return
+            
+        # Capture images
         output_dir = settings["output_directory"]
-        success = self.capture_controller._capture_image(output_dir)
+        success = self.capture_controller._capture_image(output_dir, view_types=view_types)
         
         if success:
             self.capture_count_label.config(text=f"Images: {self.capture_controller.capture_count}")
         else:
             messagebox.showerror("Error", "Failed to capture image")
+    
+    def get_selected_view_types(self):
+        """Get list of selected view types to capture"""
+        view_types = []
+        
+        if hasattr(self, 'capture_rgb_var') and self.capture_rgb_var.get():
+            view_types.append("rgb")
             
+        if hasattr(self, 'capture_depth_var') and self.capture_depth_var.get():
+            view_types.append("depth")
+            
+        if hasattr(self, 'capture_disparity_var') and self.capture_disparity_var.get():
+            view_types.append("disparity")
+            
+        if hasattr(self, 'capture_point_cloud_var') and self.capture_point_cloud_var.get():
+            view_types.append("point_cloud")
+            
+        # If nothing is selected, default to RGB
+        if not view_types:
+            view_types = ["rgb"]
+            
+        return view_types
+
     def on_browse_clicked(self):
         """Open file dialog to select output directory"""
         current_dir = self.output_dir_var.get()
@@ -686,65 +779,93 @@ class MainWindow:
         self.root.destroy()
     
     def update_preview(self):
-        """Update the camera preview image"""
+        """Update the camera preview images for all views"""
         if not self.camera.is_connected:
             return
             
         try:
-            # Create image object if doesn't exist
-            if not hasattr(self, 'preview_image'):
-                self.preview_image = sl.Mat()
+            # Get all view types
+            views_to_display = ["rgb", "depth", "disparity"]
+            frame_data = self.camera.get_current_frame(views_to_display)
+            
+            if not frame_data:
+                return
                 
-            # Grab new frame (with timeout of 200ms)
-            if self.camera.camera.grab(self.camera.runtime_params) == sl.ERROR_CODE.SUCCESS:
-                # Retrieve image
-                self.camera.camera.retrieve_image(self.preview_image, sl.VIEW.LEFT)
+            # Import numpy if needed for conversions
+            import numpy as np
                 
-                # Convert ZED image to a format suitable for Tkinter
-                # Get image data
-                image_ocv = self.preview_image.get_data()
+            # Create a dictionary to store the PhotoImage objects to prevent garbage collection
+            if not hasattr(self, 'photo_images'):
+                self.photo_images = {}
                 
-                # Convert from BGR to RGB (PIL uses RGB)
-                image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGR2RGB)
-                
-                # Resize image to fit the preview area
-                preview_width = self.preview_label.winfo_width()
-                preview_height = self.preview_label.winfo_height()
-                
-                if preview_width > 100 and preview_height > 100:  # Ensure the widget has a reasonable size
-                    # Calculate aspect ratio
-                    img_height, img_width = image_rgb.shape[:2]
-                    aspect_ratio = img_width / img_height
-                    
-                    # Calculate new dimensions maintaining aspect ratio
-                    if preview_width / preview_height > aspect_ratio:
-                        # Preview area is wider than the image
-                        new_height = preview_height
-                        new_width = int(new_height * aspect_ratio)
+            # Process each view
+            for view_name, image_data in frame_data.items():
+                if image_data is not None and view_name in self.preview_labels:
+                    # Convert image data based on view type
+                    if view_name == "rgb":
+                        # RGB image - convert from BGR to RGB
+                        image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
+                    elif view_name == "depth":
+                        # Depth image - normalize for better visualization
+                        # Scale to 0-255 for visibility
+                        depth_normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                        # Apply colormap for better visualization
+                        image_rgb = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
+                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
+                    elif view_name == "disparity":
+                        # Disparity image - normalize for better visualization
+                        disparity_normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                        # Apply colormap for better visualization
+                        image_rgb = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
+                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
+                    elif view_name == "point_cloud":
+                        # Point cloud - create a simple 2D representation
+                        # This is just a placeholder - a proper 3D visualization would require more complex code
+                        point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
+                        image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
                     else:
-                        # Preview area is taller than the image
-                        new_width = preview_width
-                        new_height = int(new_width / aspect_ratio)
+                        # For any other view type, just convert to RGB
+                        image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
                     
-                    # Resize image
-                    image_resized = cv2.resize(image_rgb, (new_width, new_height))
+                    # Resize image to fit the preview area
+                    preview_width = self.preview_labels[view_name].winfo_width()
+                    preview_height = self.preview_labels[view_name].winfo_height()
                     
-                    # Convert to PIL Image
-                    image_pil = Image.fromarray(image_resized)
-                    
-                    # Convert to PhotoImage for Tkinter
-                    self.photo_image = ImageTk.PhotoImage(image=image_pil)
-                    
-                    # Update label
-                    self.preview_label.config(image=self.photo_image)
-                    self.preview_label.image = self.photo_image  # Keep a reference
+                    if preview_width > 100 and preview_height > 100:  # Ensure the widget has a reasonable size
+                        # Calculate aspect ratio
+                        img_height, img_width = image_rgb.shape[:2]
+                        aspect_ratio = img_width / img_height
+                        
+                        # Calculate new dimensions maintaining aspect ratio
+                        if preview_width / preview_height > aspect_ratio:
+                            # Preview area is wider than the image
+                            new_height = preview_height
+                            new_width = int(new_height * aspect_ratio)
+                        else:
+                            # Preview area is taller than the image
+                            new_width = preview_width
+                            new_height = int(new_width / aspect_ratio)
+                        
+                        # Resize image
+                        image_resized = cv2.resize(image_rgb, (new_width, new_height))
+                        
+                        # Convert to PIL Image
+                        image_pil = Image.fromarray(image_resized)
+                        
+                        # Convert to PhotoImage for Tkinter
+                        self.photo_images[view_name] = ImageTk.PhotoImage(image=image_pil)
+                        
+                        # Update label
+                        self.preview_labels[view_name].config(image=self.photo_images[view_name])
+                        self.preview_labels[view_name].image = self.photo_images[view_name]  # Keep a reference
+                        
         except Exception as e:
             self.logger.error(f"Error updating preview: {e}")
-        
+            
         # Schedule next update if still connected
         if self.camera.is_connected:
             self.root.after(100, self.update_preview)  # Update every 100ms
-
+            
     def setup_video_tab(self):
         """Set up the video recording tab UI"""
         

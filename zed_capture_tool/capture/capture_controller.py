@@ -12,7 +12,7 @@ from pathlib import Path
 import json
 
 class CaptureController:
-    """Class to control the image capture process"""
+    """Class to control the image capture process with support for multiple view types"""
     
     def __init__(self, camera, gps, settings):
         self.camera = camera
@@ -84,7 +84,7 @@ class CaptureController:
             self.capture_thread.join(timeout=2.0)
             
         self.is_capturing = False
-        self.logger.info(f"Stopped capture after {self.capture_count} images")
+        self.logger.info(f"Stopped capture after {self.capture_count} image sets")
         
     def _capture_loop(self):
         """Main capture loop running in a separate thread"""
@@ -92,14 +92,17 @@ class CaptureController:
             mode = self.settings["capture_mode"]
             output_dir = self.settings["output_directory"]
             
+            # Get the view types to capture from settings
+            view_types = self._get_view_types_from_settings()
+            
             if mode == "time":
                 # Time-based capture
                 interval = self.settings["time_interval"]
-                self.logger.info(f"Capturing every {interval} seconds")
+                self.logger.info(f"Capturing every {interval} seconds with view types: {view_types}")
                 
                 while not self.stop_event.is_set():
                     # Capture image with metadata
-                    self._capture_image(output_dir)
+                    self._capture_image(output_dir, view_types=view_types)
                     
                     # Wait for the specified interval
                     for _ in range(int(interval * 10)):  # Check stop event 10 times per second
@@ -110,10 +113,10 @@ class CaptureController:
             elif mode == "gps":
                 # GPS-based capture
                 distance_threshold = self.settings["gps_interval"]
-                self.logger.info(f"Capturing every {distance_threshold} meters")
+                self.logger.info(f"Capturing every {distance_threshold} meters with view types: {view_types}")
                 
                 # Initial capture
-                self._capture_image(output_dir)
+                self._capture_image(output_dir, view_types=view_types)
                 
                 while not self.stop_event.is_set():
                     # Get current GPS location
@@ -127,7 +130,7 @@ class CaptureController:
                         
                         if distance and distance >= distance_threshold:
                             # We've moved far enough, capture another image
-                            self._capture_image(output_dir)
+                            self._capture_image(output_dir, view_types=view_types)
                             self.distance_traveled += distance
                     
                     # Short sleep to prevent CPU overuse
@@ -137,9 +140,31 @@ class CaptureController:
             self.logger.error(f"Error in capture loop: {e}")
             self.is_capturing = False
             
-    def _capture_image(self, output_dir):
-        """Capture a single image with metadata"""
+    def _get_view_types_from_settings(self):
+        """Get list of view types to capture from settings"""
+        if "view_types" in self.settings:
+            # Get enabled view types from settings
+            view_types = []
+            for view_type, enabled in self.settings["view_types"].items():
+                if enabled:
+                    view_types.append(view_type)
+                    
+            # If nothing is enabled, default to RGB
+            if not view_types:
+                view_types = ["rgb"]
+                
+            return view_types
+        else:
+            # Default to just RGB if no view types specified in settings
+            return ["rgb"]
+            
+    def _capture_image(self, output_dir, view_types=None):
+        """Capture images with metadata for all specified view types"""
         try:
+            # If no view types specified, get from settings
+            if view_types is None:
+                view_types = self._get_view_types_from_settings()
+                
             # Get current GPS data
             gps_data = self.gps.get_current_data()
             
@@ -159,6 +184,7 @@ class CaptureController:
                     "resolution": self.settings["camera"]["resolution"],
                     "mode": self.settings["camera"]["mode"]
                 },
+                "view_types": view_types,
                 "sequence_number": self.capture_count
             }
             
@@ -166,8 +192,8 @@ class CaptureController:
             date_str = datetime.now().strftime("%Y%m%d")
             file_prefix = f"zed_{date_str}"
             
-            # Capture image
-            success, image_path = self.camera.capture_image(output_dir, file_prefix, metadata)
+            # Capture images for all specified view types
+            success, image_paths = self.camera.capture_image(output_dir, file_prefix, metadata, view_types)
             
             if success:
                 self.capture_count += 1
@@ -177,7 +203,9 @@ class CaptureController:
                 if self.gps.has_fix():
                     self.last_capture_location = (gps_data["latitude"], gps_data["longitude"])
                     
-                self.logger.info(f"Captured image #{self.capture_count}: {image_path}")
+                # Log captured images
+                image_types = ", ".join(image_paths.keys())
+                self.logger.info(f"Captured image set #{self.capture_count} with types: {image_types}")
                 
             return success
             
