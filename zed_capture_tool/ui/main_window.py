@@ -119,7 +119,7 @@ class MainWindow:
         
         self.capture_count_label = ttk.Label(self.status_frame, text="Images: 0")
         self.capture_count_label.pack(side=tk.LEFT, padx=5)
-        
+  
     def setup_capture_tab(self):
         """Set up the capture tab UI with multiple camera views"""
         
@@ -133,6 +133,9 @@ class MainWindow:
         
         # Create labels for each view type
         self.preview_labels = {}
+        
+        # We'll dynamically populate the views based on what's available,
+        # but set up the basic structure for common views
         
         # RGB View
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
@@ -148,14 +151,15 @@ class MainWindow:
         self.preview_labels["depth"] = tk.Label(depth_frame, text="No depth preview", bg="#222222", fg="white")
         self.preview_labels["depth"].pack(fill=tk.BOTH, expand=True)
         
-        # Disparity View
-        disparity_frame = ttk.LabelFrame(views_frame, text="Disparity Map")
-        disparity_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        # Third View (might be Disparity or Confidence depending on SDK version)
+        third_frame = ttk.LabelFrame(views_frame, text="Additional View")
+        third_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
         
-        self.preview_labels["disparity"] = tk.Label(disparity_frame, text="No disparity preview", bg="#222222", fg="white")
+        # We'll use a generic key first, then update the label text when we know what's available
+        self.preview_labels["disparity"] = tk.Label(third_frame, text="No additional view", bg="#222222", fg="white")
         self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
         
-        # Point Cloud View (optional)
+        # Fourth View (Point Cloud)
         point_cloud_frame = ttk.LabelFrame(views_frame, text="Point Cloud")
         point_cloud_frame.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
         
@@ -174,16 +178,29 @@ class MainWindow:
         
         ttk.Label(view_select_frame, text="Views to Capture:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
-        # Checkboxes for selecting views to capture
-        self.capture_rgb_var = BooleanVar(value=True)
-        self.capture_depth_var = BooleanVar(value=False)
-        self.capture_disparity_var = BooleanVar(value=False)
-        self.capture_point_cloud_var = BooleanVar(value=False)
+        # Checkboxes for selecting views to capture - we'll populate them dynamically when camera connects
+        self.view_vars = {}
+        self.view_checkbuttons = {}
         
-        ttk.Checkbutton(view_select_frame, text="RGB", variable=self.capture_rgb_var).grid(row=0, column=1, padx=5)
-        ttk.Checkbutton(view_select_frame, text="Depth", variable=self.capture_depth_var).grid(row=0, column=2, padx=5)
-        ttk.Checkbutton(view_select_frame, text="Disparity", variable=self.capture_disparity_var).grid(row=0, column=3, padx=5)
-        ttk.Checkbutton(view_select_frame, text="Point Cloud", variable=self.capture_point_cloud_var).grid(row=0, column=4, padx=5)
+        # Add RGB checkbox (always available)
+        self.view_vars["rgb"] = BooleanVar(value=True)
+        self.view_checkbuttons["rgb"] = ttk.Checkbutton(
+            view_select_frame, text="RGB", variable=self.view_vars["rgb"]
+        )
+        self.view_checkbuttons["rgb"].grid(row=0, column=1, padx=5)
+        
+        # Add placeholders for other view types
+        view_types = ["depth", "disparity", "confidence", "point_cloud"]
+        for i, view_type in enumerate(view_types):
+            self.view_vars[view_type] = BooleanVar(value=False)
+            self.view_checkbuttons[view_type] = ttk.Checkbutton(
+                view_select_frame, text=view_type.title(), variable=self.view_vars[view_type]
+            )
+            self.view_checkbuttons[view_type].grid(row=0, column=i+2, padx=5)
+            
+            # Initially hide all except RGB
+            if view_type != "rgb":
+                self.view_checkbuttons[view_type].grid_remove()
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
@@ -249,7 +266,7 @@ class MainWindow:
                                                 command=self.on_single_capture_clicked)
         self.single_capture_button.pack(side=tk.LEFT, padx=5)
         self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
-        
+
     def setup_settings_tab(self):
         """Set up the settings tab UI"""
         
@@ -510,14 +527,12 @@ class MainWindow:
         self.settings["output_directory"] = self.output_dir_var.get()
         
         # Add view type settings
-        if not "view_types" in self.settings:
+        if "view_types" not in self.settings:
             self.settings["view_types"] = {}
             
-        if hasattr(self, 'capture_rgb_var'):
-            self.settings["view_types"]["rgb"] = self.capture_rgb_var.get()
-            self.settings["view_types"]["depth"] = self.capture_depth_var.get()
-            self.settings["view_types"]["disparity"] = self.capture_disparity_var.get()
-            self.settings["view_types"]["point_cloud"] = self.capture_point_cloud_var.get()
+        if hasattr(self, 'view_vars'):
+            for view_name, var in self.view_vars.items():
+                self.settings["view_types"][view_name] = var.get()
             
         # Camera settings
         self.settings["camera"]["mode"] = self.camera_mode_var.get()
@@ -553,6 +568,9 @@ class MainWindow:
             if not self.capture_controller:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
             
+            # Update UI for available view types
+            self.update_view_ui_for_available_types()
+                
             # Start preview updates
             self.update_preview()
                 
@@ -560,7 +578,7 @@ class MainWindow:
         else:
             self.root.title("ZED Camera Capture Tool")
             messagebox.showerror("Connection Error", 
-                               "Failed to connect to ZED camera. Please check connections and settings.")
+                                "Failed to connect to ZED camera. Please check connections and settings.")
             return False
             
     def on_disconnect_camera_clicked(self):
@@ -667,21 +685,20 @@ class MainWindow:
         """Get list of selected view types to capture"""
         view_types = []
         
-        if hasattr(self, 'capture_rgb_var') and self.capture_rgb_var.get():
-            view_types.append("rgb")
-            
-        if hasattr(self, 'capture_depth_var') and self.capture_depth_var.get():
-            view_types.append("depth")
-            
-        if hasattr(self, 'capture_disparity_var') and self.capture_disparity_var.get():
-            view_types.append("disparity")
-            
-        if hasattr(self, 'capture_point_cloud_var') and self.capture_point_cloud_var.get():
-            view_types.append("point_cloud")
-            
+        # Get all views that have their checkbox selected
+        if hasattr(self, 'view_vars'):
+            for view_name, var in self.view_vars.items():
+                if var.get():
+                    view_types.append(view_name)
+        
         # If nothing is selected, default to RGB
         if not view_types:
             view_types = ["rgb"]
+            
+        # Make sure all selected types are actually available
+        if self.camera.is_connected:
+            available_types = self.camera.get_available_view_types()
+            view_types = [vt for vt in view_types if vt in available_types]
             
         return view_types
 
@@ -784,8 +801,19 @@ class MainWindow:
             return
             
         try:
-            # Get all view types
-            views_to_display = ["rgb", "depth", "disparity"]
+            # Get available view types from the camera
+            available_view_types = self.camera.get_available_view_types()
+            
+            # Define which views to display based on what's available
+            views_to_display = ["rgb"]
+            if "depth" in available_view_types:
+                views_to_display.append("depth")
+            if "disparity" in available_view_types:
+                views_to_display.append("disparity")
+            elif "confidence" in available_view_types:  # Use confidence as fallback if disparity not available
+                views_to_display.append("confidence")
+            
+            # Get frame data for available views
             frame_data = self.camera.get_current_frame(views_to_display)
             
             if not frame_data:
@@ -812,17 +840,21 @@ class MainWindow:
                         # Apply colormap for better visualization
                         image_rgb = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
                         image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
-                    elif view_name == "disparity":
-                        # Disparity image - normalize for better visualization
-                        disparity_normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                    elif view_name == "disparity" or view_name == "confidence":
+                        # Normalize for better visualization
+                        normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
                         # Apply colormap for better visualization
-                        image_rgb = cv2.applyColorMap(disparity_normalized, cv2.COLORMAP_JET)
+                        image_rgb = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
                         image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
                     elif view_name == "point_cloud":
                         # Point cloud - create a simple 2D representation
                         # This is just a placeholder - a proper 3D visualization would require more complex code
-                        point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
-                        image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+                        try:
+                            point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
+                            image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+                        except Exception as e:
+                            self.logger.error(f"Error converting point cloud: {e}")
+                            continue
                     else:
                         # For any other view type, just convert to RGB
                         image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
@@ -865,7 +897,7 @@ class MainWindow:
         # Schedule next update if still connected
         if self.camera.is_connected:
             self.root.after(100, self.update_preview)  # Update every 100ms
-            
+
     def setup_video_tab(self):
         """Set up the video recording tab UI"""
         
@@ -1125,6 +1157,7 @@ class MainWindow:
         
         # Destroy window
         self.root.destroy()
+
     def setup_gps_tab(self):
         """Set up the GPS testing and monitoring tab"""
         
@@ -1408,3 +1441,71 @@ class MainWindow:
         # Schedule next update
         if self.gps_monitor_running:
             self.root.after(1000, self.update_gps_status)  # Update every second
+
+    def update_view_ui_for_available_types(self):
+        """Update the UI to show only available view types for this SDK version"""
+        if not self.camera.is_connected:
+            return
+            
+        try:
+            # Get available view types
+            available_types = self.camera.get_available_view_types()
+            self.logger.info(f"Available view types: {available_types}")
+            
+            # Update frame titles and checkboxes based on available types
+            if "disparity" in available_types:
+                # If disparity is available, use it for the third view
+                if "disparity" in self.preview_labels:
+                    for widget in self.preview_labels["disparity"].master.winfo_children():
+                        widget.destroy()
+                    self.preview_labels["disparity"].master.configure(text="Disparity Map")
+                    self.preview_labels["disparity"] = tk.Label(self.preview_labels["disparity"].master, 
+                                                            text="No disparity preview", bg="#222222", fg="white")
+                    self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
+                    
+                    # Show the disparity checkbox
+                    if "disparity" in self.view_checkbuttons:
+                        self.view_checkbuttons["disparity"].grid()
+                        
+            elif "confidence" in available_types:
+                # If confidence is available but disparity isn't, use confidence for the third view
+                if "disparity" in self.preview_labels:
+                    # Change the key in preview_labels
+                    third_view_master = self.preview_labels["disparity"].master
+                    self.preview_labels["disparity"].destroy()
+                    
+                    third_view_master.configure(text="Confidence Map")
+                    self.preview_labels["confidence"] = tk.Label(third_view_master, 
+                                                            text="No confidence preview", bg="#222222", fg="white")
+                    self.preview_labels["confidence"].pack(fill=tk.BOTH, expand=True)
+                    
+                    # Show the confidence checkbox instead of disparity
+                    if "confidence" in self.view_checkbuttons and "disparity" in self.view_checkbuttons:
+                        self.view_checkbuttons["disparity"].grid_remove()
+                        self.view_checkbuttons["confidence"].grid()
+            
+            # Update depth view if available
+            if "depth" in available_types:
+                if "depth" in self.view_checkbuttons:
+                    self.view_checkbuttons["depth"].grid()
+            else:
+                if "depth" in self.view_checkbuttons:
+                    self.view_checkbuttons["depth"].grid_remove()
+            
+            # Update point cloud view if available
+            if "point_cloud" in available_types:
+                if "point_cloud" in self.view_checkbuttons:
+                    self.view_checkbuttons["point_cloud"].grid()
+            else:
+                if "point_cloud" in self.view_checkbuttons:
+                    self.view_checkbuttons["point_cloud"].grid_remove()
+                    
+            # Update label text for unavailable views
+            for view_type in ["depth", "disparity", "confidence", "point_cloud"]:
+                if view_type not in available_types and view_type in self.preview_labels:
+                    label = self.preview_labels[view_type]
+                    if label:
+                        label.config(text=f"{view_type.title()} view not available in this SDK version")
+                        
+        except Exception as e:
+            self.logger.error(f"Error updating view UI: {e}")
