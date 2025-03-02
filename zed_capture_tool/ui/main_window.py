@@ -950,11 +950,15 @@ class MainWindow:
             
             # Get output directory
             output_dir = self.output_dir_var.get()
+            print(f"Looking for videos in: {output_dir}")  # Debug print
+            
             if not output_dir or not os.path.exists(output_dir):
+                print(f"Output directory doesn't exist: {output_dir}")  # Debug print
                 return
                 
             # Find all SVO files in the directory
             video_files = sorted(Path(output_dir).glob("*.svo"), reverse=True)
+            print(f"Found {len(list(video_files))} video files")  # Debug print
             
             for video_file in video_files:
                 # Try to get metadata
@@ -977,6 +981,7 @@ class MainWindow:
                 self.video_listbox.insert(tk.END, display)
         except Exception as e:
             self.logger.error(f"Error refreshing video list: {e}")
+            print(f"Error refreshing video list: {e}")  # Debug print
 
     # Update the on_closing method to handle video recording
     def on_closing(self):
