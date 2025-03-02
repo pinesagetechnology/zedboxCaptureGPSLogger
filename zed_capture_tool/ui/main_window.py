@@ -32,8 +32,8 @@ class MainWindow:
         self.root.title("ZED Camera Capture Tool")
         self.root.geometry("800x700")
         
-        # Prevent window resizing to maintain consistent layout
-        self.root.resizable(False, False)
+        # Allow window resizing (default behavior)
+        # self.root.resizable(True, True)
         
         # Set up logging
         self.logger = logging.getLogger("MainWindow")
@@ -122,17 +122,17 @@ class MainWindow:
         
         self.capture_count_label = ttk.Label(self.status_frame, text="Images: 0")
         self.capture_count_label.pack(side=tk.LEFT, padx=5)
-  
+
     def setup_capture_tab(self):
         """Set up the capture tab UI with multiple camera views"""
         
-        # Preview area - Now with multiple fixed-size views
+        # Preview area with fixed size
         preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         # Create a frame to hold all preview images
         views_frame = ttk.Frame(preview_frame)
-        views_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        views_frame.pack(padx=10, pady=10)  # Don't use fill and expand to maintain stable size
         
         # Create labels for each view type
         self.preview_labels = {}
@@ -141,44 +141,55 @@ class MainWindow:
         preview_width = 320
         preview_height = 240
         
-        # RGB View
+        # RGB View - fixed size
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
-        rgb_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        rgb_frame.grid(row=0, column=0, padx=5, pady=5)
         
-        self.preview_labels["rgb"] = tk.Label(rgb_frame, text="No RGB preview", bg="#222222", fg="white",
-                                            width=preview_width//10, height=preview_height//10)  # Approximate char size
-        self.preview_labels["rgb"].pack(fill=tk.BOTH, expand=True)
+        # Use a Canvas with fixed size to contain the preview label
+        rgb_canvas = tk.Canvas(rgb_frame, width=preview_width, height=preview_height, bg="#222222")
+        rgb_canvas.pack(padx=2, pady=2)
         
-        # Depth View
+        self.preview_labels["rgb"] = tk.Label(rgb_canvas, text="No RGB preview", bg="#222222", fg="white")
+        self.preview_labels["rgb"].place(x=preview_width//2, y=preview_height//2, anchor="center")
+        
+        # Depth View - fixed size
         depth_frame = ttk.LabelFrame(views_frame, text="Depth Map")
-        depth_frame.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        depth_frame.grid(row=0, column=1, padx=5, pady=5)
         
-        self.preview_labels["depth"] = tk.Label(depth_frame, text="No depth preview", bg="#222222", fg="white",
-                                            width=preview_width//10, height=preview_height//10)
-        self.preview_labels["depth"].pack(fill=tk.BOTH, expand=True)
+        depth_canvas = tk.Canvas(depth_frame, width=preview_width, height=preview_height, bg="#222222")
+        depth_canvas.pack(padx=2, pady=2)
         
-        # Third View (might be Disparity or Confidence depending on SDK version)
+        self.preview_labels["depth"] = tk.Label(depth_canvas, text="No depth preview", bg="#222222", fg="white")
+        self.preview_labels["depth"].place(x=preview_width//2, y=preview_height//2, anchor="center")
+        
+        # Third View (might be Disparity or Confidence depending on SDK version) - fixed size
         third_frame = ttk.LabelFrame(views_frame, text="Additional View")
-        third_frame.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        third_frame.grid(row=1, column=0, padx=5, pady=5)
+        
+        third_canvas = tk.Canvas(third_frame, width=preview_width, height=preview_height, bg="#222222")
+        third_canvas.pack(padx=2, pady=2)
         
         # We'll use a generic key first, then update the label text when we know what's available
-        self.preview_labels["disparity"] = tk.Label(third_frame, text="No additional view", bg="#222222", fg="white",
-                                                width=preview_width//10, height=preview_height//10)
-        self.preview_labels["disparity"].pack(fill=tk.BOTH, expand=True)
+        self.preview_labels["disparity"] = tk.Label(third_canvas, text="No additional view", bg="#222222", fg="white")
+        self.preview_labels["disparity"].place(x=preview_width//2, y=preview_height//2, anchor="center")
         
-        # Fourth View (Point Cloud)
+        # Fourth View (Point Cloud) - fixed size
         point_cloud_frame = ttk.LabelFrame(views_frame, text="Point Cloud")
-        point_cloud_frame.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
+        point_cloud_frame.grid(row=1, column=1, padx=5, pady=5)
         
-        self.preview_labels["point_cloud"] = tk.Label(point_cloud_frame, text="No point cloud preview", bg="#222222", fg="white",
-                                                    width=preview_width//10, height=preview_height//10)
-        self.preview_labels["point_cloud"].pack(fill=tk.BOTH, expand=True)
+        point_cloud_canvas = tk.Canvas(point_cloud_frame, width=preview_width, height=preview_height, bg="#222222")
+        point_cloud_canvas.pack(padx=2, pady=2)
         
-        # Configure grid to expand properly
-        views_frame.columnconfigure(0, weight=1)
-        views_frame.columnconfigure(1, weight=1)
-        views_frame.rowconfigure(0, weight=1)
-        views_frame.rowconfigure(1, weight=1)
+        self.preview_labels["point_cloud"] = tk.Label(point_cloud_canvas, text="No point cloud preview", bg="#222222", fg="white")
+        self.preview_labels["point_cloud"].place(x=preview_width//2, y=preview_height//2, anchor="center")
+        
+        # Store canvas references for later use
+        self.preview_canvases = {
+            "rgb": rgb_canvas,
+            "depth": depth_canvas,
+            "disparity": third_canvas,
+            "point_cloud": point_cloud_canvas
+        }
         
         # Capture mode selection
         view_select_frame = ttk.Frame(preview_frame)
@@ -834,7 +845,7 @@ class MainWindow:
             if not hasattr(self, 'photo_images'):
                 self.photo_images = {}
             
-            # Fixed size for preview images (should match what we set in setup_capture_tab)
+            # Fixed size for preview images (should match canvas sizes)
             preview_width = 320
             preview_height = 240
                 
@@ -871,7 +882,7 @@ class MainWindow:
                         # For any other view type, just convert to RGB
                         image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
                     
-                    # Always resize to the fixed preview size regardless of the actual image size
+                    # Resize to match the canvas size exactly
                     image_resized = cv2.resize(image_rgb, (preview_width, preview_height))
                     
                     # Convert to PIL Image
@@ -880,12 +891,20 @@ class MainWindow:
                     # Convert to PhotoImage for Tkinter
                     self.photo_images[view_name] = ImageTk.PhotoImage(image=image_pil)
                     
-                    # Update label
-                    self.preview_labels[view_name].config(image=self.photo_images[view_name])
-                    self.preview_labels[view_name].image = self.photo_images[view_name]  # Keep a reference
+                    # Map "confidence" view to "disparity" label if needed
+                    target_view = view_name
+                    if view_name == "confidence" and "disparity" in self.preview_labels and "confidence" not in self.preview_labels:
+                        target_view = "disparity"
+                    
+                    # Update label and place it centered on the canvas
+                    if target_view in self.preview_labels:
+                        self.preview_labels[target_view].config(image=self.photo_images[view_name], text="")
+                        self.preview_labels[target_view].place(x=preview_width//2, y=preview_height//2, anchor="center")
                         
         except Exception as e:
             self.logger.error(f"Error updating preview: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             
         # Schedule next update if still connected
         if self.camera.is_connected:
@@ -1445,16 +1464,16 @@ class MainWindow:
             available_types = self.camera.get_available_view_types()
             self.logger.info(f"Available view types: {available_types}")
             
-            # Fixed size for preview images (should match what we set in setup_capture_tab)
+            # Fixed size for preview images
             preview_width = 320
             preview_height = 240
             
-            # Update frame titles and checkboxes based on available types
+            # Update frame titles based on available types
             if "disparity" in available_types:
                 # If disparity is available, use it for the third view
                 if "disparity" in self.preview_labels:
-                    # Update frame label but keep the widget - this prevents layout shifts
-                    self.preview_labels["disparity"].master.configure(text="Disparity Map")
+                    # Update the frame title only
+                    self.preview_labels["disparity"].master.master.configure(text="Disparity Map")
                     
                     # Show the disparity checkbox
                     if "disparity" in self.view_checkbuttons:
@@ -1463,12 +1482,8 @@ class MainWindow:
             elif "confidence" in available_types:
                 # If confidence is available but disparity isn't, use confidence for the third view
                 if "disparity" in self.preview_labels:
-                    # Update frame label but keep the widget - prevents layout shifts
-                    third_view_master = self.preview_labels["disparity"].master
-                    third_view_master.configure(text="Confidence Map")
-                    
-                    # We'll reuse the disparity label for confidence data
-                    # This prevents layout shifts by not destroying/recreating widgets
+                    # Update the frame title only
+                    self.preview_labels["disparity"].master.master.configure(text="Confidence Map")
                     
                     # Show the confidence checkbox instead of disparity
                     if "confidence" in self.view_checkbuttons and "disparity" in self.view_checkbuttons:
@@ -1496,9 +1511,7 @@ class MainWindow:
                 if view_type not in available_types and view_type in self.preview_labels:
                     label = self.preview_labels[view_type]
                     if label:
-                        label.config(text=f"{view_type.title()} view not available")
-                        # Ensure label has fixed size
-                        label.config(width=preview_width//10, height=preview_height//10)
+                        label.config(text=f"{view_type.title()} view not available", image="")
                         
         except Exception as e:
             self.logger.error(f"Error updating view UI: {e}")
