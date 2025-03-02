@@ -634,8 +634,21 @@ class MainWindow:
                     widgets["scale"].state(['!disabled'])
                 else:
                     widgets["scale"].state(['disabled'])
-                
+        
+        # Update camera mode in settings
         self.settings["camera"]["mode"] = "manual" if is_manual else "auto"
+        
+        # Apply settings to camera if connected
+        if self.camera.is_connected:
+            settings = self.update_settings_from_ui()
+            if is_manual:
+                self.camera.apply_manual_settings(settings["camera"])
+            else:
+                # Reset to auto mode
+                auto_settings = {"camera": {}}
+                for name in self.camera_settings_vars:
+                    auto_settings["camera"][name] = -1  # -1 indicates auto mode
+                self.camera.apply_manual_settings(auto_settings["camera"])
         
     def on_save_settings_clicked(self):
         """Save current settings"""
@@ -653,6 +666,27 @@ class MainWindow:
             value = int(float(value))
             self.camera_setting_widgets[name]["label"].config(text=str(value))
             self.camera_settings_vars[name]["value"].set(value)
+            
+            # Apply setting immediately if camera is in manual mode and connected
+            if (self.camera.is_connected and 
+                self.camera_mode_var.get() == "manual" and 
+                not (name in self.camera_settings_vars and 
+                    "auto" in self.camera_settings_vars[name] and 
+                    self.camera_settings_vars[name]["auto"].get())):
+                
+                # Create settings dictionary with just this setting
+                settings = {"camera": {}}
+                for setting_name, vars_dict in self.camera_settings_vars.items():
+                    if setting_name == name:
+                        settings["camera"][setting_name] = value
+                    elif "auto" in vars_dict and vars_dict["auto"].get():
+                        settings["camera"][setting_name] = -1
+                    else:
+                        settings["camera"][setting_name] = vars_dict["value"].get()
+                
+                # Apply just this setting
+                self.camera.apply_manual_settings(settings["camera"])
+                
         except Exception as e:
             self.logger.error(f"Error updating scale value: {e}")
         

@@ -75,32 +75,61 @@ class ZedCamera:
     def apply_manual_settings(self, camera_settings):
         """Apply manual camera settings"""
         try:
-            # Set video settings
+            self.logger.info("Applying manual camera settings...")
+            
+            # Create a camera settings object
+            settings = sl.VIDEO_SETTINGS
+            
+            # Set video settings one by one and verify they were applied
             if camera_settings["brightness"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.BRIGHTNESS, camera_settings["brightness"])
+                value = camera_settings["brightness"]
+                self.camera.set_camera_settings(settings.BRIGHTNESS, value)
+                actual = self.camera.get_camera_settings(settings.BRIGHTNESS)
+                self.logger.info(f"Set brightness to {value}, actual value: {actual}")
             
             if camera_settings["contrast"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.CONTRAST, camera_settings["contrast"])
+                value = camera_settings["contrast"]
+                self.camera.set_camera_settings(settings.CONTRAST, value)
+                actual = self.camera.get_camera_settings(settings.CONTRAST)
+                self.logger.info(f"Set contrast to {value}, actual value: {actual}")
                 
             if camera_settings["hue"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.HUE, camera_settings["hue"])
+                value = camera_settings["hue"]
+                self.camera.set_camera_settings(settings.HUE, value)
+                actual = self.camera.get_camera_settings(settings.HUE)
+                self.logger.info(f"Set hue to {value}, actual value: {actual}")
                 
             if camera_settings["saturation"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.SATURATION, camera_settings["saturation"])
+                value = camera_settings["saturation"]
+                self.camera.set_camera_settings(settings.SATURATION, value)
+                actual = self.camera.get_camera_settings(settings.SATURATION)
+                self.logger.info(f"Set saturation to {value}, actual value: {actual}")
                 
             # Set AEC/AGC settings
             if camera_settings["exposure"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.EXPOSURE, camera_settings["exposure"])
+                value = camera_settings["exposure"]
+                self.camera.set_camera_settings(settings.EXPOSURE, value)
+                actual = self.camera.get_camera_settings(settings.EXPOSURE)
+                self.logger.info(f"Set exposure to {value}, actual value: {actual}")
                 
             if camera_settings["gain"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.GAIN, camera_settings["gain"])
+                value = camera_settings["gain"]
+                self.camera.set_camera_settings(settings.GAIN, value)
+                actual = self.camera.get_camera_settings(settings.GAIN)
+                self.logger.info(f"Set gain to {value}, actual value: {actual}")
                 
             if camera_settings["whitebalance"] >= 0:
-                self.camera.set_camera_settings(sl.VIDEO_SETTINGS.WHITEBALANCE_TEMPERATURE, camera_settings["whitebalance"])
+                value = camera_settings["whitebalance"]
+                self.camera.set_camera_settings(settings.WHITEBALANCE_TEMPERATURE, value)
+                actual = self.camera.get_camera_settings(settings.WHITEBALANCE_TEMPERATURE)
+                self.logger.info(f"Set white balance to {value}, actual value: {actual}")
                 
-            self.logger.info("Applied manual camera settings")
+            self.logger.info("Manual camera settings applied successfully")
+            return True
+            
         except Exception as e:
             self.logger.error(f"Error applying manual settings: {e}")
+            return False
             
     def get_current_settings(self):
         """Get current camera settings"""
