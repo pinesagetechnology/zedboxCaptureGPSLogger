@@ -92,18 +92,14 @@ class VideoRecorder:
                 "filename": video_filename,
                 "start_time": self.start_time.isoformat(),
                 "camera_settings": {
-                    # Fix the incorrect attribute access
-                    "resolution": self.camera.camera.get_camera_information().camera_resolution.name,
-                    # Change to:
-                    "resolution": str(self.camera.camera.get_camera_information().camera_model),
-                    "fps": self.camera.camera.get_camera_information().camera_fps
+                    "resolution": str(self.camera.camera.get_camera_information().camera_configuration.resolution),
+                    "fps": self.camera.camera.get_camera_information().camera_configuration.fps
                 },
                 "recording_settings": {
                     "codec": codec,
                     "bitrate": bitrate
                 }
             }
-            
             metadata_path = output_path / f"zed_video_{timestamp}.json"
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=4)
