@@ -17,7 +17,7 @@ DEFAULT_SETTINGS = {
     "metadata_format": "json",
     "camera": {
         "mode": "auto",  # "auto" or "manual"
-        "resolution": "HD1080",  # HD720, HD1080, HD2K, VGA
+        "resolution": "HD720",  # HD720, HD1080, HD2K, VGA
         "fps": 30,
         "brightness": 4,
         "contrast": 4,

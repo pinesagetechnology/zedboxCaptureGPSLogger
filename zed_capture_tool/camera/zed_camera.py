@@ -34,15 +34,22 @@ class ZedCamera:
         """Connect to the ZED camera with the specified settings"""
         if self.is_connected:
             self.disconnect()
-            
+                
         try:
             # Configure camera init parameters based on settings
-            self.init_params.camera_resolution = self.RESOLUTIONS.get(
-                settings["camera"]["resolution"], sl.RESOLUTION.HD1080
-            )
+            # Make sure we use a resolution that's definitely supported
+            resolution_name = settings["camera"]["resolution"]
+            if resolution_name in self.RESOLUTIONS:
+                self.init_params.camera_resolution = self.RESOLUTIONS[resolution_name]
+            else:
+                # Default to a safe resolution if the specified one isn't valid
+                self.logger.warning(f"Invalid resolution '{resolution_name}', defaulting to HD720")
+                self.init_params.camera_resolution = sl.RESOLUTION.HD720
+                
             self.init_params.camera_fps = settings["camera"]["fps"]
             
             # Open the camera
+            self.logger.info(f"Opening camera with resolution {resolution_name} at {settings['camera']['fps']} FPS")
             status = self.camera.open(self.init_params)
             if status != sl.ERROR_CODE.SUCCESS:
                 self.logger.error(f"Failed to open camera: {status}")
@@ -55,7 +62,7 @@ class ZedCamera:
             self.is_connected = True
             self.logger.info(f"Connected to ZED camera: {self.camera.get_camera_information().serial_number}")
             return True
-            
+                
         except Exception as e:
             self.logger.error(f"Error connecting to camera: {e}")
             return False
