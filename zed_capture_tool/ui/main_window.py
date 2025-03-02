@@ -195,28 +195,6 @@ class MainWindow:
                                               command=self.on_single_capture_clicked)
         self.single_capture_button.pack(side=tk.LEFT, padx=5)
         self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
-
-        mode_frame = ttk.Frame(control_frame)
-        mode_frame.pack(fill=tk.X, padx=10, pady=5)
-
-        ttk.Label(mode_frame, text="Capture Mode:").pack(side=tk.LEFT, padx=5)
-
-        self.capture_view_mode = StringVar(value="LEFT")
-        view_mode_combo = ttk.Combobox(mode_frame, textvariable=self.capture_view_mode, 
-                                    values=["LEFT", "RIGHT", "DEPTH", "CONFIDENCE"], 
-                                    state="readonly", width=15)
-        view_mode_combo.pack(side=tk.LEFT, padx=5)
-        view_mode_combo.bind("<<ComboboxSelected>>", self.on_view_mode_changed)
-    
-    def on_view_mode_changed(self, event=None):
-        """Handle view mode changes"""
-        view_mode = self.capture_view_mode.get()
-        self.logger.info(f"View mode changed to: {view_mode}")
-        
-        # Update settings
-        self.settings["view_mode"] = view_mode
-        
-        # If preview is active, it will automatically update with the new mode
         
     def setup_settings_tab(self):
         """Set up the settings tab UI"""
@@ -751,44 +729,55 @@ class MainWindow:
             if not hasattr(self, 'preview_image'):
                 self.preview_image = sl.Mat()
                 
-            # Get selected view mode
-            view_mode_str = self.capture_view_mode.get()
-            view_mode = sl.VIEW.LEFT  # Default
-            
-            # Map string to sl.VIEW enum
-            if view_mode_str == "RIGHT":
-                view_mode = sl.VIEW.RIGHT
-            elif view_mode_str == "DEPTH":
-                view_mode = sl.VIEW.DEPTH
-            elif view_mode_str == "CONFIDENCE":
-                view_mode = sl.VIEW.CONFIDENCE
-                
-            # Grab new frame
+            # Grab new frame (with timeout of 200ms)
             if self.camera.camera.grab(self.camera.runtime_params) == sl.ERROR_CODE.SUCCESS:
-                # Retrieve image with selected view mode
-                self.camera.camera.retrieve_image(self.preview_image, view_mode)
+                # Retrieve image
+                self.camera.camera.retrieve_image(self.preview_image, sl.VIEW.LEFT)
                 
                 # Convert ZED image to a format suitable for Tkinter
+                # Get image data
                 image_ocv = self.preview_image.get_data()
                 
-                # Convert to RGB for display (except for depth which might need special handling)
-                if view_mode_str in ["LEFT", "RIGHT"]:
-                    image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGR2RGB)
-                else:
-                    # For depth and other modes, normalize the visualization
-                    image_rgb = cv2.normalize(image_ocv, None, 0, 255, cv2.NORM_MINMAX)
-                    # Convert to 3-channel if it's single channel
-                    if len(image_rgb.shape) == 2:
-                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_GRAY2RGB)
+                # Convert from BGR to RGB (PIL uses RGB)
+                image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGR2RGB)
                 
-                # Resize and display as before
-                # [rest of the existing preview code]
+                # Resize image to fit the preview area
+                preview_width = self.preview_label.winfo_width()
+                preview_height = self.preview_label.winfo_height()
+                
+                if preview_width > 100 and preview_height > 100:  # Ensure the widget has a reasonable size
+                    # Calculate aspect ratio
+                    img_height, img_width = image_rgb.shape[:2]
+                    aspect_ratio = img_width / img_height
+                    
+                    # Calculate new dimensions maintaining aspect ratio
+                    if preview_width / preview_height > aspect_ratio:
+                        # Preview area is wider than the image
+                        new_height = preview_height
+                        new_width = int(new_height * aspect_ratio)
+                    else:
+                        # Preview area is taller than the image
+                        new_width = preview_width
+                        new_height = int(new_width / aspect_ratio)
+                    
+                    # Resize image
+                    image_resized = cv2.resize(image_rgb, (new_width, new_height))
+                    
+                    # Convert to PIL Image
+                    image_pil = Image.fromarray(image_resized)
+                    
+                    # Convert to PhotoImage for Tkinter
+                    self.photo_image = ImageTk.PhotoImage(image=image_pil)
+                    
+                    # Update label
+                    self.preview_label.config(image=self.photo_image)
+                    self.preview_label.image = self.photo_image  # Keep a reference
         except Exception as e:
             self.logger.error(f"Error updating preview: {e}")
         
-        # Schedule next update
+        # Schedule next update if still connected
         if self.camera.is_connected:
-            self.root.after(100, self.update_preview)
+            self.root.after(100, self.update_preview)  # Update every 100ms
 
     def setup_video_tab(self):
         """Set up the video recording tab UI"""
