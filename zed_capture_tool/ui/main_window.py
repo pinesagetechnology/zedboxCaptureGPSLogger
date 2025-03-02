@@ -7,20 +7,22 @@ Implements the main user interface using Tkinter.
 import os
 import logging
 import time
+import json
 import threading
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from tkinter import StringVar, IntVar, DoubleVar, BooleanVar
-from PIL import Image, ImageTk
 import cv2
+from PIL import Image, ImageTk
 import pyzed.sl as sl
 
-from ..camera.zed_camera import ZedCamera
-from ..gps.gps_receiver import GPSReceiver
-from ..capture.capture_controller import CaptureController
-from ..config import load_settings, save_settings
+from zed_capture_tool.camera.zed_camera import ZedCamera
+from zed_capture_tool.gps.gps_receiver import GPSReceiver
+from zed_capture_tool.capture.capture_controller import CaptureController
+from zed_capture_tool.video.video_recorder import VideoRecorder
+from zed_capture_tool.config import load_settings, save_settings
 
 class MainWindow:
     """Main application window using Tkinter"""
@@ -84,8 +86,13 @@ class MainWindow:
         
         # Capture tab
         self.capture_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.capture_tab, text="Capture")
+        self.notebook.add(self.capture_tab, text="Photo Capture")
         self.setup_capture_tab()
+        
+        # Video tab
+        self.video_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.video_tab, text="Video Recording")
+        self.setup_video_tab()
         
         # Settings tab
         self.settings_tab = ttk.Frame(self.notebook)
@@ -355,6 +362,13 @@ class MainWindow:
                 self.disconnect_camera_button.state(['!disabled'])
                 self.start_button.state(['!disabled'])
                 self.single_capture_button.state(['!disabled'])
+                
+                # Enable video recording buttons
+                if hasattr(self, 'start_record_button'):
+                    if not hasattr(self, 'video_recorder') or not self.video_recorder.is_recording:
+                        self.start_record_button.state(['!disabled'])
+                    else:
+                        self.start_record_button.state(['disabled'])
             else:
                 self.camera_status_label.config(text="Camera: Disconnected")
                 self.connect_camera_button.state(['!disabled'])
@@ -362,6 +376,10 @@ class MainWindow:
                 self.start_button.state(['disabled'])
                 self.single_capture_button.state(['disabled'])
                 
+                # Disable video recording buttons
+                if hasattr(self, 'start_record_button'):
+                    self.start_record_button.state(['disabled'])
+                    
             # Update GPS status
             if self.gps.is_connected:
                 gps_data = self.gps.get_current_data()
@@ -398,6 +416,26 @@ class MainWindow:
                         self.single_capture_button.state(['disabled'])
                         
                     self.stop_button.state(['disabled'])
+                    
+            # Update video recording status
+            if hasattr(self, 'video_recorder'):
+                if self.video_recorder.is_recording:
+                    status = self.video_recorder.get_recording_status()
+                    duration = status["duration"]
+                    file_path = status["file_path"]
+                    
+                    if hasattr(self, 'recording_status_label'):
+                        self.recording_status_label.config(text="Recording")
+                        self.recording_duration_label.config(text=f"{duration:.1f} seconds")
+                        
+                        if file_path:
+                            self.recording_file_label.config(text=os.path.basename(file_path))
+                            
+                    # Update button states
+                    if hasattr(self, 'start_record_button'):
+                        self.start_record_button.state(['disabled'])
+                        self.stop_record_button.state(['!disabled'])
+                        
         except Exception as e:
             self.logger.error(f"Error updating UI: {e}")
             
@@ -701,3 +739,258 @@ class MainWindow:
         # Schedule next update if still connected
         if self.camera.is_connected:
             self.root.after(100, self.update_preview)  # Update every 100ms
+
+    def setup_video_tab(self):
+        """Set up the video recording tab UI"""
+        
+        # Video control frame
+        control_frame = ttk.LabelFrame(self.video_tab, text="Video Recording")
+        control_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Output directory
+        dir_frame = ttk.Frame(control_frame)
+        dir_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Reuse the same output directory from capture tab
+        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
+        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
+        
+        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
+        browse_button.grid(row=0, column=2, padx=5)
+        
+        dir_frame.columnconfigure(1, weight=1)
+        
+        # Video settings
+        settings_frame = ttk.Frame(control_frame)
+        settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Codec selection
+        ttk.Label(settings_frame, text="Codec:").grid(row=0, column=0, sticky=tk.W)
+        
+        self.codec_var = StringVar(value="H264")
+        codec_combo = ttk.Combobox(settings_frame, textvariable=self.codec_var, 
+                                values=["H264", "H265"], state="readonly", width=10)
+        codec_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        # Bitrate
+        ttk.Label(settings_frame, text="Bitrate (Kbps):").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        
+        self.bitrate_var = IntVar(value=8000)  # 8 Mbps default
+        bitrate_spin = ttk.Spinbox(settings_frame, from_=1000, to=50000, increment=1000,
+                                textvariable=self.bitrate_var, width=8)
+        bitrate_spin.grid(row=0, column=3, padx=5, sticky=tk.W)
+        
+        # Recording duration limit
+        ttk.Label(settings_frame, text="Duration limit (sec):").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
+        
+        self.duration_limit_var = IntVar(value=0)  # 0 means no limit
+        duration_spin = ttk.Spinbox(settings_frame, from_=0, to=3600, increment=10,
+                                textvariable=self.duration_limit_var, width=8)
+        duration_spin.grid(row=1, column=1, padx=5, sticky=tk.W, pady=(10, 0))
+        ttk.Label(settings_frame, text="(0 = no limit)").grid(row=1, column=2, sticky=tk.W, pady=(10, 0))
+        
+        # Record buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.start_record_button = ttk.Button(button_frame, text="Start Recording", 
+                                            command=self.on_start_recording_clicked)
+        self.start_record_button.pack(side=tk.LEFT, padx=5)
+        self.start_record_button.state(['disabled'])  # Disabled until camera is connected
+        
+        self.stop_record_button = ttk.Button(button_frame, text="Stop Recording", 
+                                        command=self.on_stop_recording_clicked)
+        self.stop_record_button.pack(side=tk.LEFT, padx=5)
+        self.stop_record_button.state(['disabled'])  # Disabled until recording starts
+        
+        # Recording status
+        status_frame = ttk.LabelFrame(self.video_tab, text="Recording Status")
+        status_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Status labels
+        status_grid = ttk.Frame(status_frame)
+        status_grid.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(status_grid, text="Status:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.recording_status_label = ttk.Label(status_grid, text="Not recording")
+        self.recording_status_label.grid(row=0, column=1, sticky=tk.W, pady=2)
+        
+        ttk.Label(status_grid, text="Duration:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.recording_duration_label = ttk.Label(status_grid, text="0 seconds")
+        self.recording_duration_label.grid(row=1, column=1, sticky=tk.W, pady=2)
+        
+        ttk.Label(status_grid, text="Output file:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.recording_file_label = ttk.Label(status_grid, text="None")
+        self.recording_file_label.grid(row=2, column=1, sticky=tk.W, pady=2)
+        
+        # Video file list
+        list_frame = ttk.LabelFrame(self.video_tab, text="Recorded Videos")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Add a listbox with scrollbar
+        list_container = ttk.Frame(list_frame)
+        list_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        self.video_listbox = tk.Listbox(list_container)
+        self.video_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.video_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.video_listbox.config(yscrollcommand=scrollbar.set)
+        
+        # Button to refresh video list
+        refresh_button = ttk.Button(list_frame, text="Refresh List", command=self.refresh_video_list)
+        refresh_button.pack(side=tk.LEFT, padx=5, pady=5)
+
+    # Add these methods to handle video recording functionality
+    def on_start_recording_clicked(self):
+        """Start video recording"""
+        if not self.camera.is_connected:
+            messagebox.showerror("Error", "Camera not connected")
+            return
+            
+        # Get output directory
+        output_dir = self.output_dir_var.get()
+        
+        # Get recording settings
+        codec = self.codec_var.get()
+        bitrate = self.bitrate_var.get()
+        
+        # Initialize video recorder if not already
+        if not hasattr(self, 'video_recorder'):
+            self.video_recorder = VideoRecorder(self.camera)
+        
+        # Start recording
+        success = self.video_recorder.start_recording(
+            output_dir=output_dir,
+            codec=codec,
+            bitrate=bitrate
+        )
+        
+        if success:
+            # Update UI
+            self.recording_status_label.config(text="Recording")
+            self.start_record_button.state(['disabled'])
+            self.stop_record_button.state(['!disabled'])
+            
+            # Start duration timer
+            self.recording_start_time = time.time()
+            self.update_recording_duration()
+            
+            # Set up duration limit if specified
+            duration_limit = self.duration_limit_var.get()
+            if duration_limit > 0:
+                self.root.after(duration_limit * 1000, self.check_duration_limit)
+        else:
+            messagebox.showerror("Error", "Failed to start recording")
+
+    def on_stop_recording_clicked(self):
+        """Stop video recording"""
+        if not hasattr(self, 'video_recorder') or not self.video_recorder.is_recording:
+            return
+            
+        # Stop recording
+        success, video_path, duration = self.video_recorder.stop_recording()
+        
+        if success:
+            # Update UI
+            self.recording_status_label.config(text="Not recording")
+            self.recording_duration_label.config(text="0 seconds")
+            self.recording_file_label.config(text=os.path.basename(video_path) if video_path else "None")
+            
+            self.start_record_button.state(['!disabled'])
+            self.stop_record_button.state(['disabled'])
+            
+            # Refresh video list
+            self.refresh_video_list()
+            
+            # Show success message
+            messagebox.showinfo("Recording Complete", 
+                            f"Video saved to:\n{video_path}\n\nDuration: {duration:.1f} seconds")
+        else:
+            messagebox.showerror("Error", "Failed to stop recording")
+
+    def update_recording_duration(self):
+        """Update the recording duration display"""
+        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
+            status = self.video_recorder.get_recording_status()
+            duration = status["duration"]
+            self.recording_duration_label.config(text=f"{duration:.1f} seconds")
+            
+            # Update file path
+            file_path = status["file_path"]
+            if file_path:
+                self.recording_file_label.config(text=os.path.basename(file_path))
+            
+            # Schedule next update
+            self.root.after(500, self.update_recording_duration)
+
+    def check_duration_limit(self):
+        """Check if recording duration limit has been reached"""
+        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
+            duration_limit = self.duration_limit_var.get()
+            if duration_limit > 0:
+                status = self.video_recorder.get_recording_status()
+                if status["duration"] >= duration_limit:
+                    self.logger.info(f"Duration limit reached ({duration_limit} seconds). Stopping recording.")
+                    self.on_stop_recording_clicked()
+
+    def refresh_video_list(self):
+        """Refresh the list of recorded videos"""
+        try:
+            # Clear current list
+            self.video_listbox.delete(0, tk.END)
+            
+            # Get output directory
+            output_dir = self.output_dir_var.get()
+            if not output_dir or not os.path.exists(output_dir):
+                return
+                
+            # Find all SVO files in the directory
+            video_files = sorted(Path(output_dir).glob("*.svo"), reverse=True)
+            
+            for video_file in video_files:
+                # Try to get metadata
+                metadata_file = video_file.with_suffix('.json')
+                if metadata_file.exists():
+                    try:
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+                            
+                        start_time = metadata.get("start_time", "Unknown")
+                        duration = metadata.get("duration_seconds", 0)
+                        
+                        # Format display string
+                        display = f"{video_file.name} - {start_time} ({duration:.1f}s)"
+                    except:
+                        display = f"{video_file.name}"
+                else:
+                    display = f"{video_file.name}"
+                    
+                self.video_listbox.insert(tk.END, display)
+        except Exception as e:
+            self.logger.error(f"Error refreshing video list: {e}")
+
+    # Update the on_closing method to handle video recording
+    def on_closing(self):
+        """Handle window close event"""
+        # Stop recording if active
+        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
+            self.video_recorder.stop_recording()
+        
+        # Stop any active processes
+        if self.capture_controller and self.capture_controller.is_capturing:
+            self.capture_controller.stop_capture()
+            
+        # Disconnect devices
+        self.camera.disconnect()
+        self.gps.disconnect()
+        
+        # Save settings
+        self.update_settings_from_ui()
+        save_settings(self.settings)
+        
+        # Destroy window
+        self.root.destroy()
