@@ -115,9 +115,9 @@ class MainWindow:
         preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        self.preview_label = ttk.Label(preview_frame, text="No preview available")
+        self.preview_label = tk.Label(preview_frame, text="No preview available", bg="#222222", fg="white")
         self.preview_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.preview_label.config(width=640, height=360)  # Set default size
+        self.preview_label.config(width=80, height=24)  # Text units for tk.Label
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
