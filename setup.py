@@ -19,7 +19,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "zed_capture=zed_capture_tool.main:main",
+            "zed_capture=zed_capture_tool.main:main",  # This must match your module structure
         ],
     },
     python_requires=">=3.6",

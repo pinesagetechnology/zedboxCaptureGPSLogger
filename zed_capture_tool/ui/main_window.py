@@ -15,10 +15,10 @@ from tkinter import ttk, filedialog, messagebox
 from tkinter import StringVar, IntVar, DoubleVar, BooleanVar
 from PIL import Image, ImageTk
 
-from camera.zed_camera import ZedCamera
-from gps.gps_receiver import GPSReceiver
-from capture.capture_controller import CaptureController
-from config import load_settings, save_settings
+from ..camera.zed_camera import ZedCamera
+from ..gps.gps_receiver import GPSReceiver
+from ..capture.capture_controller import CaptureController
+from ..config import load_settings, save_settings
 
 class MainWindow:
     """Main application window using Tkinter"""

@@ -10,7 +10,7 @@ import sys
 import os
 import logging
 import tkinter as tk
-from ui.main_window import MainWindow
+from .ui.main_window import MainWindow
 from config import setup_logging
 
 def main():
