@@ -115,6 +115,11 @@ class CaptureController:
                 distance_threshold = self.settings["gps_interval"]
                 self.logger.info(f"Capturing every {distance_threshold} meters with view types: {view_types}")
                 
+                # Set initial capture location if GPS has fix
+                gps_data = self.gps.get_current_data()
+                if self.gps.has_fix():
+                    self.last_capture_location = (gps_data["latitude"], gps_data["longitude"])
+                
                 # Initial capture
                 self._capture_image(output_dir, view_types=view_types)
                 
@@ -125,13 +130,15 @@ class CaptureController:
                     if self.gps.has_fix() and self.last_capture_location:
                         current_location = (gps_data["latitude"], gps_data["longitude"])
                         
-                        # Calculate distance from last capture
-                        distance = self.gps.distance_from_last(current_location)
+                        # Calculate distance between current location and last capture location directly
+                        distance = self._calculate_distance(self.last_capture_location, current_location)
                         
                         if distance and distance >= distance_threshold:
                             # We've moved far enough, capture another image
                             self._capture_image(output_dir, view_types=view_types)
                             self.distance_traveled += distance
+                            # Update last capture location to current location
+                            self.last_capture_location = current_location
                     
                     # Short sleep to prevent CPU overuse
                     time.sleep(0.1)
@@ -222,3 +229,33 @@ class CaptureController:
             "distance_traveled": round(self.distance_traveled, 2) if self.distance_traveled else 0,
             "mode": self.settings["capture_mode"]
         }
+    
+    def _calculate_distance(self, pos1, pos2):
+        """
+        Calculate distance between two GPS coordinates
+        
+        Args:
+            pos1: Tuple of (latitude, longitude)
+            pos2: Tuple of (latitude, longitude)
+            
+        Returns:
+            float: Distance in meters
+        """
+        import math
+        # Both positions must be valid
+        if not (pos1[0] and pos1[1] and pos2[0] and pos2[1]):
+            return None
+            
+        # Convert decimal degrees to radians
+        lat1, lon1 = pos1
+        lat2, lon2 = pos2
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        
+        # Haversine formula
+        dlon = lon2 - lon1
+        dlat = lat2 - lat1
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        r = 6371000  # Radius of earth in meters
+        
+        return c * r
