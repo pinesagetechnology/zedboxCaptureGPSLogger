@@ -139,8 +139,8 @@ class MainWindow:
         
         # Fixed size for each preview (width, height in pixels)
         # Double the original size: 320*2, 240*2
-        preview_width = 640
-        preview_height = 480
+        preview_width = 540
+        preview_height = 380
         
         # RGB View - fixed size
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
@@ -858,8 +858,8 @@ class MainWindow:
                 preview_height = self.preview_dimensions["height"]
             else:
                 # Default to 640x480 if not set
-                preview_width = 640
-                preview_height = 480
+                preview_width = 540
+                preview_height = 380
                 
             # Process each view
             for view_name, image_data in frame_data.items():
@@ -1477,8 +1477,8 @@ class MainWindow:
             self.logger.info(f"Available view types: {available_types}")
             
             # Fixed size for preview images
-            preview_width = 640
-            preview_height = 480
+            preview_width = 540
+            preview_height = 380
             
             # Update frame titles based on available types
             if "disparity" in available_types:
