@@ -215,6 +215,71 @@ class MainWindow:
             # Initially hide all except RGB
             if view_type != "rgb":
                 self.view_checkbuttons[view_type].grid_remove()
+        
+        # Capture controls
+        control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Capture mode
+        mode_frame = ttk.Frame(control_frame)
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Time interval option
+        time_radio = ttk.Radiobutton(mode_frame, text="Time Interval:", 
+                                    variable=self.capture_mode_var, value="time", 
+                                    command=self.on_capture_mode_changed)
+        time_radio.grid(row=0, column=0, sticky=tk.W)
+        
+        time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, 
+                                textvariable=self.time_interval_var)
+        time_spin.grid(row=0, column=1, padx=5)
+        
+        ttk.Label(mode_frame, text="seconds").grid(row=0, column=2, sticky=tk.W)
+        
+        # GPS interval option
+        gps_radio = ttk.Radiobutton(mode_frame, text="GPS Distance:", 
+                                    variable=self.capture_mode_var, value="gps", 
+                                    command=self.on_capture_mode_changed)
+        gps_radio.grid(row=0, column=3, sticky=tk.W, padx=(20, 0))
+        
+        gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, 
+                                textvariable=self.gps_interval_var)
+        gps_spin.grid(row=0, column=4, padx=5)
+        
+        ttk.Label(mode_frame, text="meters").grid(row=0, column=5, sticky=tk.W)
+        
+        # Output directory
+        dir_frame = ttk.Frame(control_frame)
+        dir_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
+        
+        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
+        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
+        
+        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
+        browse_button.grid(row=0, column=2, padx=5)
+        
+        dir_frame.columnconfigure(1, weight=1)
+        
+        # Capture buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.start_button = ttk.Button(button_frame, text="Start Capture", 
+                                        command=self.on_start_capture_clicked)
+        self.start_button.pack(side=tk.LEFT, padx=5)
+        self.start_button.state(['disabled'])  # Disabled until camera is connected
+        
+        self.stop_button = ttk.Button(button_frame, text="Stop Capture", 
+                                        command=self.on_stop_capture_clicked)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.stop_button.state(['disabled'])  # Disabled until capture starts
+        
+        self.single_capture_button = ttk.Button(button_frame, text="Single Capture", 
+                                                command=self.on_single_capture_clicked)
+        self.single_capture_button.pack(side=tk.LEFT, padx=5)
+        self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
 
     def setup_settings_tab(self):
         """Set up the settings tab UI"""
