@@ -139,8 +139,8 @@ class MainWindow:
         
         # Fixed size for each preview (width, height in pixels)
         # Double the original size: 320*2, 240*2
-        preview_width = 640
-        preview_height = 480
+        preview_width = 320
+        preview_height = 240
         
         # RGB View - fixed size
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
