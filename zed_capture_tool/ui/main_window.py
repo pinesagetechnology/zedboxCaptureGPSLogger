@@ -1262,6 +1262,12 @@ class MainWindow:
                                 command=lambda: self.nmea_text.delete(1.0, tk.END))
         clear_button.pack(pady=5)
 
+        # Live GPS Data Display
+        live_data_frame = ttk.Frame(status_frame)
+        live_data_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.live_gps_label = ttk.Label(live_data_frame, text="Live GPS Data: N/A")
+        self.live_gps_label.pack(side=tk.LEFT)
+
     def on_gps_connect_clicked(self):
         """Connect to GPS receiver from GPS tab"""
         settings = self.update_settings_from_ui()
@@ -1453,6 +1459,16 @@ class MainWindow:
         # Schedule next update
         if self.gps_monitor_running:
             self.root.after(1000, self.update_gps_status)  # Update every second
+
+        # Update live GPS data label
+        gps_data = self.gps.get_current_data()
+        live_text = (
+            f"Lat: {gps_data.get('latitude', 'N/A')}, "
+            f"Lon: {gps_data.get('longitude', 'N/A')}, "
+            f"Alt: {gps_data.get('altitude', 'N/A')} m, "
+            f"Speed: {gps_data.get('speed', 'N/A')} km/h"
+        )
+        self.live_gps_label.config(text=live_text)
 
     def update_view_ui_for_available_types(self):
         """Update the UI to show only available view types for this SDK version"""
