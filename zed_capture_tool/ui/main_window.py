@@ -138,9 +138,8 @@ class MainWindow:
         self.preview_labels = {}
         
         # Fixed size for each preview (width, height in pixels)
-        # Double the original size: 320*2, 240*2
-        preview_width = 540
-        preview_height = 380
+        preview_width = 320
+        preview_height = 240
         
         # RGB View - fixed size
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
@@ -165,7 +164,7 @@ class MainWindow:
         
         # Third View (might be Disparity or Confidence depending on SDK version) - fixed size
         third_frame = ttk.LabelFrame(views_frame, text="Additional View")
-        third_frame.grid(row=1, column=0, padx=5, pady=5)
+        third_frame.grid(row=0, column=2, padx=5, pady=5)
         
         third_canvas = tk.Canvas(third_frame, width=preview_width, height=preview_height, bg="#222222")
         third_canvas.pack(padx=2, pady=2)
@@ -174,22 +173,11 @@ class MainWindow:
         self.preview_labels["disparity"] = tk.Label(third_canvas, text="No additional view", bg="#222222", fg="white")
         self.preview_labels["disparity"].place(x=preview_width//2, y=preview_height//2, anchor="center")
         
-        # Fourth View (Point Cloud) - fixed size
-        point_cloud_frame = ttk.LabelFrame(views_frame, text="Point Cloud")
-        point_cloud_frame.grid(row=1, column=1, padx=5, pady=5)
-        
-        point_cloud_canvas = tk.Canvas(point_cloud_frame, width=preview_width, height=preview_height, bg="#222222")
-        point_cloud_canvas.pack(padx=2, pady=2)
-        
-        self.preview_labels["point_cloud"] = tk.Label(point_cloud_canvas, text="No point cloud preview", bg="#222222", fg="white")
-        self.preview_labels["point_cloud"].place(x=preview_width//2, y=preview_height//2, anchor="center")
-        
         # Store canvas references for later use
         self.preview_canvases = {
             "rgb": rgb_canvas,
             "depth": depth_canvas,
-            "disparity": third_canvas,
-            "point_cloud": point_cloud_canvas
+            "disparity": third_canvas
         }
         
         # Also store the preview dimensions for use in other methods
@@ -216,7 +204,7 @@ class MainWindow:
         self.view_checkbuttons["rgb"].grid(row=0, column=1, padx=5)
         
         # Add placeholders for other view types
-        view_types = ["depth", "disparity", "confidence", "point_cloud"]
+        view_types = ["depth", "disparity", "confidence"]  # Removed "point_cloud"
         for i, view_type in enumerate(view_types):
             self.view_vars[view_type] = BooleanVar(value=False)
             self.view_checkbuttons[view_type] = ttk.Checkbutton(
@@ -227,71 +215,6 @@ class MainWindow:
             # Initially hide all except RGB
             if view_type != "rgb":
                 self.view_checkbuttons[view_type].grid_remove()
-        
-        # Capture controls
-        control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
-        control_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Capture mode
-        mode_frame = ttk.Frame(control_frame)
-        mode_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Time interval option
-        time_radio = ttk.Radiobutton(mode_frame, text="Time Interval:", 
-                                    variable=self.capture_mode_var, value="time", 
-                                    command=self.on_capture_mode_changed)
-        time_radio.grid(row=0, column=0, sticky=tk.W)
-        
-        time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, 
-                                textvariable=self.time_interval_var)
-        time_spin.grid(row=0, column=1, padx=5)
-        
-        ttk.Label(mode_frame, text="seconds").grid(row=0, column=2, sticky=tk.W)
-        
-        # GPS interval option
-        gps_radio = ttk.Radiobutton(mode_frame, text="GPS Distance:", 
-                                    variable=self.capture_mode_var, value="gps", 
-                                    command=self.on_capture_mode_changed)
-        gps_radio.grid(row=0, column=3, sticky=tk.W, padx=(20, 0))
-        
-        gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, 
-                                textvariable=self.gps_interval_var)
-        gps_spin.grid(row=0, column=4, padx=5)
-        
-        ttk.Label(mode_frame, text="meters").grid(row=0, column=5, sticky=tk.W)
-        
-        # Output directory
-        dir_frame = ttk.Frame(control_frame)
-        dir_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
-        
-        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
-        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
-        
-        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
-        browse_button.grid(row=0, column=2, padx=5)
-        
-        dir_frame.columnconfigure(1, weight=1)
-        
-        # Capture buttons
-        button_frame = ttk.Frame(control_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.start_button = ttk.Button(button_frame, text="Start Capture", 
-                                        command=self.on_start_capture_clicked)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-        self.start_button.state(['disabled'])  # Disabled until camera is connected
-        
-        self.stop_button = ttk.Button(button_frame, text="Stop Capture", 
-                                        command=self.on_stop_capture_clicked)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
-        self.stop_button.state(['disabled'])  # Disabled until capture starts
-        
-        self.single_capture_button = ttk.Button(button_frame, text="Single Capture", 
-                                                command=self.on_single_capture_clicked)
-        self.single_capture_button.pack(side=tk.LEFT, padx=5)
-        self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
 
     def setup_settings_tab(self):
         """Set up the settings tab UI"""
@@ -858,8 +781,8 @@ class MainWindow:
                 preview_height = self.preview_dimensions["height"]
             else:
                 # Default to 640x480 if not set
-                preview_width = 540
-                preview_height = 380
+                preview_width = 320
+                preview_height = 240
                 
             # Process each view
             for view_name, image_data in frame_data.items():
@@ -881,15 +804,15 @@ class MainWindow:
                         # Apply colormap for better visualization
                         image_rgb = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
                         image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
-                    elif view_name == "point_cloud":
-                        # Point cloud - create a simple 2D representation
-                        # This is just a placeholder - a proper 3D visualization would require more complex code
-                        try:
-                            point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
-                            image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
-                        except Exception as e:
-                            self.logger.error(f"Error converting point cloud: {e}")
-                            continue
+                    # elif view_name == "point_cloud":
+                    #     # Point cloud - create a simple 2D representation
+                    #     # This is just a placeholder - a proper 3D visualization would require more complex code
+                    #     try:
+                    #         point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
+                    #         image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
+                    #     except Exception as e:
+                    #         self.logger.error(f"Error converting point cloud: {e}")
+                    #         continue
                     else:
                         # For any other view type, just convert to RGB
                         image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
@@ -1477,8 +1400,8 @@ class MainWindow:
             self.logger.info(f"Available view types: {available_types}")
             
             # Fixed size for preview images
-            preview_width = 540
-            preview_height = 380
+            preview_width = 320
+            preview_height = 240
             
             # Update frame titles based on available types
             if "disparity" in available_types:
@@ -1511,15 +1434,15 @@ class MainWindow:
                     self.view_checkbuttons["depth"].grid_remove()
             
             # Update point cloud view if available
-            if "point_cloud" in available_types:
-                if "point_cloud" in self.view_checkbuttons:
-                    self.view_checkbuttons["point_cloud"].grid()
-            else:
-                if "point_cloud" in self.view_checkbuttons:
-                    self.view_checkbuttons["point_cloud"].grid_remove()
+            # if "point_cloud" in available_types:
+            #     if "point_cloud" in self.view_checkbuttons:
+            #         self.view_checkbuttons["point_cloud"].grid()
+            # else:
+            #     if "point_cloud" in self.view_checkbuttons:
+            #         self.view_checkbuttons["point_cloud"].grid_remove()
                     
             # Update label text for unavailable views
-            for view_type in ["depth", "disparity", "confidence", "point_cloud"]:
+            for view_type in ["depth", "disparity", "confidence"]: # "point_cloud"
                 if view_type not in available_types and view_type in self.preview_labels:
                     label = self.preview_labels[view_type]
                     if label:

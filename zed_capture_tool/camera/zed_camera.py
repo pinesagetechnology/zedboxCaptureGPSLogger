@@ -154,10 +154,10 @@ class ZedCamera:
                         self.camera.retrieve_image(self.view_images[view_name], self.VIEW_TYPES[view_name])
                         # Get numpy array and store in result
                         result[view_name] = self.view_images[view_name].get_data()
-                    elif view_name == "point_cloud":
-                        # Special handling for point cloud
-                        self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
-                        result[view_name] = self.point_cloud.get_data()
+                    # elif view_name == "point_cloud":
+                    #     # Special handling for point cloud
+                    #     self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
+                    #     result[view_name] = self.point_cloud.get_data()
         except Exception as e:
             self.logger.error(f"Error getting current frame: {e}")
             
@@ -217,7 +217,7 @@ class ZedCamera:
     def get_available_view_types(self):
         """Get list of available view types in this SDK version"""
         available_types = list(self.VIEW_TYPES.keys())
-        available_types.append("point_cloud")  # This is handled separately
+        # available_types.append("point_cloud")  # This is handled separately
         return available_types
     
     def capture_image(self, output_dir, file_prefix, metadata=None, view_types=None):
@@ -269,23 +269,23 @@ class ZedCamera:
                         self.view_images[view_name].write(str(image_path))
                         image_paths[view_name] = str(image_path)
                         
-                    elif view_name == "point_cloud":
-                        # Special handling for point cloud - save as PLY file
-                        cloud_filename = f"{file_prefix}_pointcloud_{timestamp}.ply"
-                        cloud_path = output_path / cloud_filename
+                    # elif view_name == "point_cloud":
+                    #     # Special handling for point cloud - save as PLY file
+                    #     cloud_filename = f"{file_prefix}_pointcloud_{timestamp}.ply"
+                    #     cloud_path = output_path / cloud_filename
                         
-                        # Retrieve point cloud
-                        self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
+                    #     # Retrieve point cloud
+                    #     self.camera.retrieve_measure(self.point_cloud, sl.MEASURE.XYZRGBA)
                         
-                        # Check if there's a direct save_point_cloud method or need to use write()
-                        if hasattr(self.camera, 'save_point_cloud'):
-                            # Use the SDK method if available
-                            self.camera.save_point_cloud(str(cloud_path))
-                        else:
-                            # Otherwise, save the point cloud mat directly
-                            self.point_cloud.write(str(cloud_path))
+                    #     # Check if there's a direct save_point_cloud method or need to use write()
+                    #     if hasattr(self.camera, 'save_point_cloud'):
+                    #         # Use the SDK method if available
+                    #         self.camera.save_point_cloud(str(cloud_path))
+                    #     else:
+                    #         # Otherwise, save the point cloud mat directly
+                    #         self.point_cloud.write(str(cloud_path))
                             
-                        image_paths["point_cloud"] = str(cloud_path)
+                    #     image_paths["point_cloud"] = str(cloud_path)
                 
                 # Save metadata if provided
                 if metadata:
