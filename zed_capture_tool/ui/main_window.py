@@ -395,6 +395,23 @@ class MainWindow:
         gps_tab = ttk.Frame(settings_notebook)
         settings_notebook.add(gps_tab, text="GPS")
         
+        # GPS device selection
+        device_frame = ttk.Frame(gps_tab)
+        device_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Create variable for GPS device selection
+        self.gps_device_var = StringVar(value=self.settings["gps"]["active_device"])
+        
+        # Get available devices from settings
+        available_devices = list(self.settings["gps"]["devices"].keys())
+        
+        device_combo = ttk.Combobox(device_frame, textvariable=self.gps_device_var, 
+                                values=available_devices, state="readonly", width=15)
+        device_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        device_combo.bind("<<ComboboxSelected>>", self.on_gps_device_changed)
+
         # GPS port
         port_frame = ttk.Frame(gps_tab)
         port_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -561,8 +578,9 @@ class MainWindow:
                 self.settings["camera"][name] = vars_dict["value"].get()
                 
         # GPS settings
-        self.settings["gps"]["port"] = self.gps_port_var.get()
-        self.settings["gps"]["baud_rate"] = self.gps_baud_var.get()
+        self.settings["gps"]["active_device"] = self.gps_device_var.get()
+        self.settings["gps"]["devices"][self.gps_device_var.get()]["port"] = self.gps_port_var.get()
+        self.settings["gps"]["devices"][self.gps_device_var.get()]["baud_rate"] = self.gps_baud_var.get()
         
         return self.settings
         
@@ -1268,6 +1286,22 @@ class MainWindow:
         self.live_gps_label = ttk.Label(live_data_frame, text="Live GPS Data: N/A")
         self.live_gps_label.pack(side=tk.LEFT)
 
+        # Add device management buttons
+        mgmt_frame = ttk.Frame(gps_tab)
+        mgmt_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        add_button = ttk.Button(mgmt_frame, text="Add Device", 
+                            command=self.on_add_gps_device)
+        add_button.pack(side=tk.LEFT, padx=5)
+        
+        edit_button = ttk.Button(mgmt_frame, text="Edit Device", 
+                                command=self.on_edit_gps_device)
+        edit_button.pack(side=tk.LEFT, padx=5)
+        
+        remove_button = ttk.Button(mgmt_frame, text="Remove Device", 
+                                command=self.on_remove_gps_device)
+        remove_button.pack(side=tk.LEFT, padx=5)
+
     def on_gps_connect_clicked(self):
         """Connect to GPS receiver from GPS tab"""
         settings = self.update_settings_from_ui()
@@ -1531,3 +1565,16 @@ class MainWindow:
                         
         except Exception as e:
             self.logger.error(f"Error updating view UI: {e}")
+
+    def on_gps_device_changed(self, event=None):
+        """Handle change of GPS device selection"""
+        device = self.gps_device_var.get()
+        
+        # Update port and baud rate based on selected device
+        if device in self.settings["gps"]["devices"]:
+            device_config = self.settings["gps"]["devices"][device]
+            self.gps_port_var.set(device_config["port"])
+            self.gps_baud_var.set(device_config["baud_rate"])
+            
+        # Update active device in settings
+        self.settings["gps"]["active_device"] = device

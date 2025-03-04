@@ -14,7 +14,18 @@ from datetime import datetime
 
 class GPSReceiver:
     """Class to manage the GPS operations"""
-    
+    # Add GPS model-specific configurations
+    GPS_MODELS = {
+        "uBlox": {
+            "default_baud": 9600,
+            "default_port": "/dev/ttyACM0"
+        },
+        "BU353N5": {
+            "default_baud": 4800,
+            "default_port": "/dev/ttyUSB0"
+        }
+    }
+
     def __init__(self):
         self.serial_port = None
         self.is_connected = False
@@ -43,11 +54,16 @@ class GPSReceiver:
             self.disconnect()
             
         try:
+            # Get active device config
+            active_device = settings["gps"]["active_device"]
+            device_config = settings["gps"]["devices"][active_device]
+            self.current_model = device_config["model"]
+
             port = settings["gps"]["port"]
             baud_rate = settings["gps"]["baud_rate"]
             timeout = settings["gps"]["timeout"]
             
-            self.logger.info(f"Attempting to connect to GPS on {port} at {baud_rate} baud")
+            self.logger.info(f"Attempting to connect to GPS model {self.current_model} on {port} at {baud_rate} baud")
             
             # Try opening the port
             self.serial_port = serial.Serial(port, baud_rate, timeout=timeout)
