@@ -283,7 +283,7 @@ class MainWindow:
 
     def setup_settings_tab(self):
         """Set up the settings tab UI"""
-        
+    
         # Create a notebook for settings categories
         settings_notebook = ttk.Notebook(self.settings_tab)
         settings_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -393,16 +393,16 @@ class MainWindow:
         
         # GPS settings tab
         gps_tab = ttk.Frame(settings_notebook)
-        settings_notebook.add(gps_tab, text="GPS")
+        settings_notebook.add(gps_tab, text="GPS") 
         
         # GPS device selection
         device_frame = ttk.Frame(gps_tab)
         device_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
-        
+    
         # Create variable for GPS device selection
-        self.gps_device_var = StringVar(value=self.settings["gps"]["active_device"])
+        self.gps_device_var = StringVar(value="default")  # Default to "default" device
         
         # Get available devices from settings
         available_devices = list(self.settings["gps"]["devices"].keys())
@@ -412,20 +412,28 @@ class MainWindow:
         device_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         device_combo.bind("<<ComboboxSelected>>", self.on_gps_device_changed)
 
-        # GPS port
+        # GPS port and other settings
         port_frame = ttk.Frame(gps_tab)
         port_frame.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Initialize with default device port
+        default_port = self.settings["gps"]["devices"]["default"]["port"]
+        self.gps_port_var = StringVar(value=default_port)
         
         port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
         port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
         
         ttk.Label(port_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
+        # Initialize with default device baud rate
+        default_baud = self.settings["gps"]["devices"]["default"]["baud_rate"]
+        self.gps_baud_var = IntVar(value=default_baud)
+        
         baud_combo = ttk.Combobox(port_frame, textvariable=self.gps_baud_var, 
-                                 values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                 state="readonly", width=10)
+                                values=[4800, 9600, 19200, 38400, 57600, 115200], 
+                                state="readonly", width=10)
         baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
         # GPS connect buttons
@@ -578,9 +586,18 @@ class MainWindow:
                 self.settings["camera"][name] = vars_dict["value"].get()
                 
         # GPS settings
-        self.settings["gps"]["active_device"] = self.gps_device_var.get()
-        self.settings["gps"]["devices"][self.gps_device_var.get()]["port"] = self.gps_port_var.get()
-        self.settings["gps"]["devices"][self.gps_device_var.get()]["baud_rate"] = self.gps_baud_var.get()
+        if "active_device" not in self.settings["gps"]:
+            self.settings["gps"]["active_device"] = "default"
+            
+        # Update active device from UI selection
+        if hasattr(self, 'gps_device_var'):
+            self.settings["gps"]["active_device"] = self.gps_device_var.get()
+            
+        # Update device settings for the active device
+        active_device = self.settings["gps"]["active_device"]
+        if active_device in self.settings["gps"]["devices"]:
+            self.settings["gps"]["devices"][active_device]["port"] = self.gps_port_var.get()
+            self.settings["gps"]["devices"][active_device]["baud_rate"] = self.gps_baud_var.get()
         
         return self.settings
         
@@ -625,30 +642,63 @@ class MainWindow:
             self.photo_image = None
             
         self.camera.disconnect()
-        
+
     def on_connect_gps_clicked(self):
-        """Connect to GPS receiver"""
+        """Connect to GPS receiver from GPS tab"""
         settings = self.update_settings_from_ui()
         
         self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
         self.root.update()
         
+        # Update UI immediately to show trying to connect
+        self.gps_status_labels["gps_connection_status"].config(text="Connecting...")
+        self.gps_status_labels["gps_connection_status"].config(foreground="orange")
+        self.root.update()
+        
+        # Enable verbose logging for connection
+        old_level = logging.getLogger("GPSReceiver").level
+        logging.getLogger("GPSReceiver").setLevel(logging.DEBUG)
+        
+        # Connect to GPS
         success = self.gps.connect(settings)
+        
+        # Reset logging level
+        logging.getLogger("GPSReceiver").setLevel(old_level)
         
         if success:
             self.root.title("ZED Camera Capture Tool")
             
-            # Initialize capture controller if not already
+            # Initialize capture controller if not already and camera is connected
             if not self.capture_controller and self.camera.is_connected:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
                 
+            # Update GPS status labels
+            self.gps_status_labels["gps_connection_status"].config(text="Connected")
+            self.gps_status_labels["gps_connection_status"].config(foreground="green")
+            
+            # Update UI
+            self.gps_connect_button.state(['disabled'])
+            self.gps_disconnect_button.state(['!disabled'])
+            self.gps_test_button.state(['!disabled'])
+            
+            # Start GPS monitoring
+            self.start_gps_monitoring()
+            
             return True
         else:
             self.root.title("ZED Camera Capture Tool")
-            messagebox.showerror("Connection Error", 
-                               "Failed to connect to GPS. Please check connections and port settings.")
-            return False
+            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed")
+            self.gps_status_labels["gps_connection_status"].config(foreground="red")
             
+            # Get the selected device name for better error message
+            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
+            port = settings["gps"]["devices"][active_device]["port"]
+            
+            messagebox.showerror("Connection Error", 
+                            f"Failed to connect to GPS device '{active_device}' on {port}. "
+                            "Please check connections and port settings.")
+            return False
+
     def on_disconnect_gps_clicked(self):
         """Disconnect from GPS receiver"""
         # Stop capture if running in GPS mode

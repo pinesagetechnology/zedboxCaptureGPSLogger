@@ -47,7 +47,7 @@ class GPSReceiver:
         
         # Last position for distance calculation
         self.last_position = (None, None)
-        
+
     def connect(self, settings):
         """Connect to the GPS device"""
         if self.is_connected:
@@ -55,13 +55,13 @@ class GPSReceiver:
             
         try:
             # Get active device config
-            active_device = settings["gps"]["active_device"]
+            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
             device_config = settings["gps"]["devices"][active_device]
             self.current_model = device_config["model"]
 
-            port = settings["gps"]["port"]
-            baud_rate = settings["gps"]["baud_rate"]
-            timeout = settings["gps"]["timeout"]
+            port = device_config["port"]
+            baud_rate = device_config["baud_rate"]
+            timeout = device_config.get("timeout", 1.0)
             
             self.logger.info(f"Attempting to connect to GPS model {self.current_model} on {port} at {baud_rate} baud")
             
@@ -94,7 +94,7 @@ class GPSReceiver:
             self.thread.daemon = True
             self.thread.start()
             
-            self.logger.info(f"Connected to GPS on port {port}")
+            self.logger.info(f"Connected to GPS device '{active_device}' on port {port}")
             return True
             
         except Exception as e:
