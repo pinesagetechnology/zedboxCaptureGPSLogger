@@ -69,8 +69,24 @@ def load_settings():
         if SETTINGS_FILE.exists():
             with open(SETTINGS_FILE, 'r') as f:
                 settings = json.load(f)
+                
+                # Ensure GPS settings structure is complete
+                if 'gps' in settings and 'active_device' not in settings['gps']:
+                    settings['gps']['active_device'] = 'default'
+                
                 # Merge with defaults to ensure all keys exist
-                return {**DEFAULT_SETTINGS, **settings}
+                merged_settings = DEFAULT_SETTINGS.copy()
+                
+                # Deep merge for nested dictionaries
+                for key, value in settings.items():
+                    if key in merged_settings and isinstance(value, dict) and isinstance(merged_settings[key], dict):
+                        # For nested dictionaries, merge them instead of replacing
+                        for sub_key, sub_value in value.items():
+                            merged_settings[key][sub_key] = sub_value
+                    else:
+                        merged_settings[key] = value
+                
+                return merged_settings
         else:
             save_settings(DEFAULT_SETTINGS)
             return DEFAULT_SETTINGS
