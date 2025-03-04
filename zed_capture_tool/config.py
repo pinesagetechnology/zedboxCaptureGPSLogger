@@ -28,7 +28,7 @@ DEFAULT_SETTINGS = {
         "whitebalance": -1,  # -1 for auto
     },
     "gps": {
-        "active_device": "default",  # Which device configuration to use
+        "active_device": "default",
         "devices": {
             "default": {
                 "model": "uBlox",
@@ -38,8 +38,8 @@ DEFAULT_SETTINGS = {
             },
             "bu353n5": {
                 "model": "BU353N5",
-                "port": "/dev/ttyUSB0",  # Typical port for USB GPS receivers
-                "baud_rate": 4800,       # Default baud rate for BU-353N5
+                "port": "/dev/ttyUSB0",
+                "baud_rate": 4800,
                 "timeout": 1.0
             }
         }

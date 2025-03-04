@@ -1287,7 +1287,7 @@ class MainWindow:
         self.live_gps_label.pack(side=tk.LEFT)
 
         # Add device management buttons
-        mgmt_frame = ttk.Frame(gps_tab)
+        mgmt_frame = ttk.Frame(self.gps_tab)
         mgmt_frame.pack(fill=tk.X, padx=10, pady=5)
         
         add_button = ttk.Button(mgmt_frame, text="Add Device", 
@@ -1578,3 +1578,239 @@ class MainWindow:
             
         # Update active device in settings
         self.settings["gps"]["active_device"] = device
+
+    def on_add_gps_device(self):
+        """Add a new GPS device configuration"""
+        try:
+            # Create a dialog window
+            dialog = tk.Toplevel(self.root)
+            dialog.title("Add GPS Device")
+            dialog.geometry("400x300")
+            dialog.transient(self.root)  # Make it a child of the main window
+            dialog.grab_set()  # Make it modal
+            
+            # Device fields
+            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
+            name_var = StringVar()
+            name_entry = ttk.Entry(dialog, textvariable=name_var, width=25)
+            name_entry.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
+            model_var = StringVar(value="uBlox")
+            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
+                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
+            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
+            port_var = StringVar(value="/dev/ttyUSB0")
+            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
+            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
+            baud_var = IntVar(value=9600)
+            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
+                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
+                                    state="readonly", width=10)
+            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            # Function to handle model change - update default port/baud
+            def on_model_change(event=None):
+                model = model_var.get()
+                if model == "uBlox":
+                    port_var.set("/dev/ttyACM0")
+                    baud_var.set(9600)
+                elif model == "BU353N5":
+                    port_var.set("/dev/ttyUSB0")
+                    baud_var.set(4800)
+                    
+            model_combo.bind("<<ComboboxSelected>>", on_model_change)
+            
+            # Buttons
+            button_frame = ttk.Frame(dialog)
+            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
+            
+            def on_save():
+                # Validate
+                device_name = name_var.get().strip()
+                if not device_name:
+                    messagebox.showerror("Error", "Device name cannot be empty", parent=dialog)
+                    return
+                    
+                if device_name in self.settings["gps"]["devices"]:
+                    messagebox.showerror("Error", f"Device '{device_name}' already exists", parent=dialog)
+                    return
+                    
+                # Create new device config
+                self.settings["gps"]["devices"][device_name] = {
+                    "model": model_var.get(),
+                    "port": port_var.get(),
+                    "baud_rate": baud_var.get(),
+                    "timeout": 1.0
+                }
+                
+                # Update device list in UI
+                device_combo = self.notebook.nametowidget(
+                    self.notebook.select()).nametowidget("!frame.!frame.!combobox")
+                device_combo['values'] = list(self.settings["gps"]["devices"].keys())
+                
+                # Close dialog
+                dialog.destroy()
+                
+                # Save settings
+                save_settings(self.settings)
+                
+                # Show success message
+                messagebox.showinfo("Success", f"Device '{device_name}' added successfully")
+                
+            def on_cancel():
+                dialog.destroy()
+                
+            save_button = ttk.Button(button_frame, text="Save", command=on_save)
+            save_button.pack(side=tk.LEFT, padx=10)
+            
+            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
+            cancel_button.pack(side=tk.LEFT, padx=10)
+            
+        except Exception as e:
+            self.logger.error(f"Error adding GPS device: {e}")
+            messagebox.showerror("Error", f"Failed to add GPS device: {e}")
+
+    def on_edit_gps_device(self):
+        """Edit an existing GPS device configuration"""
+        try:
+            # Get current device
+            current_device = self.gps_device_var.get()
+            
+            if current_device not in self.settings["gps"]["devices"]:
+                messagebox.showerror("Error", "Please select a device to edit")
+                return
+                
+            # Cannot edit the default device
+            if current_device == "default" and len(self.settings["gps"]["devices"]) > 1:
+                messagebox.showerror("Error", "The default device cannot be edited. Please add a new device instead.")
+                return
+                
+            # Get current device config
+            device_config = self.settings["gps"]["devices"][current_device]
+            
+            # Create a dialog window
+            dialog = tk.Toplevel(self.root)
+            dialog.title(f"Edit GPS Device: {current_device}")
+            dialog.geometry("400x300")
+            dialog.transient(self.root)  # Make it a child of the main window
+            dialog.grab_set()  # Make it modal
+            
+            # Device fields - name is not editable
+            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
+            name_label = ttk.Label(dialog, text=current_device)
+            name_label.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
+            model_var = StringVar(value=device_config.get("model", "uBlox"))
+            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
+                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
+            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
+            port_var = StringVar(value=device_config.get("port", "/dev/ttyACM0"))
+            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
+            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
+            baud_var = IntVar(value=device_config.get("baud_rate", 9600))
+            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
+                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
+                                    state="readonly", width=10)
+            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
+            
+            # Buttons
+            button_frame = ttk.Frame(dialog)
+            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
+            
+            def on_save():
+                # Update device config
+                self.settings["gps"]["devices"][current_device] = {
+                    "model": model_var.get(),
+                    "port": port_var.get(),
+                    "baud_rate": baud_var.get(),
+                    "timeout": device_config.get("timeout", 1.0)
+                }
+                
+                # Update UI if this is the active device
+                if current_device == self.settings["gps"]["active_device"]:
+                    self.gps_port_var.set(port_var.get())
+                    self.gps_baud_var.set(baud_var.get())
+                
+                # Close dialog
+                dialog.destroy()
+                
+                # Save settings
+                save_settings(self.settings)
+                
+                # Show success message
+                messagebox.showinfo("Success", f"Device '{current_device}' updated successfully")
+                
+            def on_cancel():
+                dialog.destroy()
+                
+            save_button = ttk.Button(button_frame, text="Save", command=on_save)
+            save_button.pack(side=tk.LEFT, padx=10)
+            
+            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
+            cancel_button.pack(side=tk.LEFT, padx=10)
+            
+        except Exception as e:
+            self.logger.error(f"Error editing GPS device: {e}")
+            messagebox.showerror("Error", f"Failed to edit GPS device: {e}")
+
+    def on_remove_gps_device(self):
+        """Remove a GPS device configuration"""
+        try:
+            # Get current device
+            current_device = self.gps_device_var.get()
+            
+            if current_device not in self.settings["gps"]["devices"]:
+                messagebox.showerror("Error", "Please select a device to remove")
+                return
+                
+            # Cannot remove the default device
+            if current_device == "default":
+                messagebox.showerror("Error", "The default device cannot be removed")
+                return
+                
+            # Confirm removal
+            confirm = messagebox.askyesno("Confirm Removal", 
+                                    f"Are you sure you want to remove the device '{current_device}'?")
+            if not confirm:
+                return
+                
+            # Check if this is the active device
+            is_active = (current_device == self.settings["gps"]["active_device"])
+            
+            # Remove the device
+            del self.settings["gps"]["devices"][current_device]
+            
+            # If it was the active device, switch to default
+            if is_active:
+                self.settings["gps"]["active_device"] = "default"
+                self.gps_device_var.set("default")
+                
+                # Update port and baud UI
+                default_config = self.settings["gps"]["devices"]["default"]
+                self.gps_port_var.set(default_config["port"])
+                self.gps_baud_var.set(default_config["baud_rate"])
+                
+            # Update device list in UI
+            device_combo = self.notebook.nametowidget(
+                self.notebook.select()).nametowidget("!frame.!frame.!combobox")
+            device_combo['values'] = list(self.settings["gps"]["devices"].keys())
+            
+            # Save settings
+            save_settings(self.settings)
+            
+            # Show success message
+            messagebox.showinfo("Success", f"Device '{current_device}' removed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error removing GPS device: {e}")
+            messagebox.showerror("Error", f"Failed to remove GPS device: {e}")
