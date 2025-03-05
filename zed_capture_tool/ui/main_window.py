@@ -376,17 +376,31 @@ class MainWindow:
             lab.grid(row=row, column=col+1, sticky=tk.W, padx=5, pady=2)
             self.gps_status_labels[key] = lab
         
-        # Controls to connect/disconnect
+        # Add a variable for baud rate and default it to 4800
+        self.gps_baud_rate_var = tk.IntVar(value=4800)
+        
+        # GPS Control frame
         control_frame = ttk.LabelFrame(self.gps_tab, text="GPS Control")
         control_frame.pack(fill=tk.X, padx=10, pady=10)
         
+        # Port frame
         port_frame = ttk.Frame(control_frame)
         port_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
         port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
         port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
-        ttk.Label(port_frame, text="(baud 4800 fixed)").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
+        
+        # Baud rate dropdown
+        ttk.Label(port_frame, text="Baud:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        baud_combo = ttk.Combobox(
+            port_frame,
+            textvariable=self.gps_baud_rate_var,
+            values=[4800, 9600, 19200, 38400, 57600, 115200],
+            state="readonly",
+            width=10
+        )
+        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
         button_frame = ttk.Frame(control_frame)
         button_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -689,6 +703,9 @@ class MainWindow:
         """Connect to GPS using current settings."""
         settings = self.update_settings_from_ui()
         
+        # Override the baud rate with the user’s selection
+        settings["gps"]["baud_rate"] = self.gps_baud_rate_var.get()
+
         self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
         self.root.update()
         
@@ -1087,8 +1104,7 @@ class MainWindow:
         
         # GPS
         self.settings["gps"]["port"] = self.gps_port_var.get()
-        # The BU-353N5's baud rate is fixed at 4800
-        self.settings["gps"]["baud_rate"] = 4800
+        self.settings["gps"]["baud_rate"] = self.gps_baud_rate_var.get()
         
         return self.settings
 

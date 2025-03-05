@@ -47,10 +47,10 @@ class GPSReceiver:
         try:
             # Get GPS settings - simplified for BU-353N5 only
             port = settings["gps"]["port"]
-            baud_rate = 4800  # Fixed for BU-353N5
+            baud_rate = settings["gps"].get("baud_rate", 4800)  # default to 4800 if not found - baud_rate = 4800  # Fixed for BU-353N5
             timeout = 1.0
             
-            self.logger.info(f"Attempting to connect to BU-353N5 GPS on {port}")
+            self.logger.info(f"Attempting to connect to GPS on {port} at {baud_rate} baud")
             
             # Try opening the port
             self.serial_port = serial.Serial(port, baud_rate, timeout=timeout)
