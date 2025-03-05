@@ -754,22 +754,19 @@ class MainWindow:
             messagebox.showerror("Error", "GPS not connected")
             return
         
-        self.nmea_text.insert(tk.END, "--- Testing GPS Connection ---\n")
+        # Clear the text widget or append a header
+        self.nmea_text.insert(tk.END, "--- Last 5 NMEA Sentences ---\n")
         self.nmea_text.see(tk.END)
         
         # We attempt to read e.g. 10 lines or until 5 seconds passes
         count = 0
-        end_time = time.time() + 5
-        while time.time() < end_time and count < 10:
-            if self.gps.serial_port and self.gps.serial_port.in_waiting:
-                line = (self.gps.serial_port.readline()
-                                    .decode('ascii', errors='replace')
-                                    .strip())
-                if line:
-                    self.nmea_text.insert(tk.END, line + "\n")
-                    self.nmea_text.see(tk.END)
-                    count += 1
-            time.sleep(0.1)
+        # Retrieve and display the stored sentences
+        for sentence in self.gps.last_nmea_sentences:
+            self.nmea_text.insert(tk.END, sentence + "\n")
+            count += 1
+        
+        self.nmea_text.insert(tk.END, "--- End of Test ---\n\n")
+        self.nmea_text.see(tk.END)
         
         if count == 0:
             self.nmea_text.insert(tk.END, "No data received.\n")

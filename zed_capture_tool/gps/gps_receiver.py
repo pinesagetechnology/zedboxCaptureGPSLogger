@@ -36,8 +36,10 @@ class GPSReceiver:
         
         # Last position for distance calculation
         self.last_position = (None, None)
-        # Store last raw NMEA sentence
+        # Store last raw NMEA sentence (optional)
         self.last_raw_nmea = None
+        # NEW: Store the last 5 raw NMEA sentences
+        self.last_nmea_sentences = []
 
     def connect(self, settings):
         """Connect to the GPS device (BU-353N5) using the given settings."""
@@ -101,7 +103,7 @@ class GPSReceiver:
             self.is_connected = False
             self.serial_port = None
             self.logger.info("Disconnected from GPS")
-            
+
     def _read_gps_data(self):
         """Read and parse GPS data in a background thread."""
         while self.thread_running and self.serial_port and self.serial_port.is_open:
@@ -110,15 +112,19 @@ class GPSReceiver:
                                     .decode('ascii', errors='replace')
                                     .strip())
                 if line:
-                    # Keep the most recent raw NMEA sentence
+                    # Save the most recent raw sentence
                     self.last_raw_nmea = line
+                    # Append to the list and keep only the last 5 sentences
+                    self.last_nmea_sentences.append(line)
+                    if len(self.last_nmea_sentences) > 5:
+                        self.last_nmea_sentences.pop(0)
+                    
                     if line.startswith('$'):
                         try:
                             msg = pynmea2.parse(line)
                             
                             # Parse different NMEA sentence types
                             if isinstance(msg, pynmea2.GGA):
-                                # Global Positioning System Fix Data
                                 self.current_data["latitude"] = msg.latitude
                                 self.current_data["longitude"] = msg.longitude
                                 self.current_data["altitude"] = msg.altitude
@@ -134,10 +140,8 @@ class GPSReceiver:
                                     self.current_data["timestamp"] = timestamp.isoformat()
                                     
                             elif isinstance(msg, pynmea2.RMC):
-                                # Recommended Minimum Navigation Information
                                 self.current_data["latitude"] = msg.latitude
                                 self.current_data["longitude"] = msg.longitude
-                                # Convert knots to km/h
                                 self.current_data["speed"] = msg.spd_over_grnd * 1.852
                                 
                                 if msg.datestamp and msg.timestamp:
