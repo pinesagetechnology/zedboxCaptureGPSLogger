@@ -28,7 +28,8 @@ DEFAULT_SETTINGS = {
         "whitebalance": -1,  # -1 for auto
     },
     "gps": {
-        "active_device": "default",
+        "active_device": "bu353n5",       # Changed from "default" to "bu353n5"
+        "port": "/dev/ttyUSB2",            # Added to fix the port to ttyUSB2 by default
         "devices": {
             "default": {
                 "model": "uBlox",
