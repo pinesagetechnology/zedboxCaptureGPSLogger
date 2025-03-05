@@ -943,8 +943,9 @@ class MainWindow:
                 if vtype == "rgb":
                     image_rgb = cv2.cvtColor(img_data, cv2.COLOR_BGR2RGB)
                 elif vtype in ["depth", "disparity", "confidence"]:
-                    # Normalize for visualization
+                    # Normalize for visualization and ensure type is uint8
                     normed = cv2.normalize(img_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                    normed = normed.astype('uint8')  # Ensure image type is uint8
                     colorized = cv2.applyColorMap(normed, cv2.COLORMAP_JET)
                     image_rgb = cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)
                 else:
@@ -1212,17 +1213,18 @@ class MainWindow:
             
             latitude = gps_data.get("latitude")
             longitude = gps_data.get("longitude")
-            # Use the helper function to format coordinates if available
+            # Use the helper function to format coordinates via self
             if latitude is not None:
-                self.gps_status_labels["gps_latitude"].config(text=format_coordinate(latitude, is_lat=True))
+                self.gps_status_labels["gps_latitude"].config(text=self.format_coordinate(latitude, is_lat=True))
             else:
                 self.gps_status_labels["gps_latitude"].config(text="N/A")
             
             if longitude is not None:
-                self.gps_status_labels["gps_longitude"].config(text=format_coordinate(longitude, is_lat=False))
+                self.gps_status_labels["gps_longitude"].config(text=self.format_coordinate(longitude, is_lat=False))
             else:
                 self.gps_status_labels["gps_longitude"].config(text="N/A")
             
             self.gps_status_labels["gps_altitude"].config(text=str(gps_data.get("altitude", "N/A")))
             self.gps_status_labels["gps_speed"].config(text=str(gps_data.get("speed", "N/A")))
             self.gps_status_labels["gps_time"].config(text=str(gps_data.get("timestamp", "N/A")))
+
