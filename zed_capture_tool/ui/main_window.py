@@ -171,20 +171,23 @@ class MainWindow:
         view_select_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(view_select_frame, text="Views to Capture:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
-        
+
         self.view_vars = {}
-        # Always show "rgb"
-        self.view_vars["rgb"] = BooleanVar(value=True)
-        cb_rgb = ttk.Checkbutton(view_select_frame, text="RGB", variable=self.view_vars["rgb"])
-        cb_rgb.grid(row=0, column=1, padx=5)
+        self.view_checkbuttons = {}  # This is the missing dictionary
+
+        # Create checkbox for "RGB" view (always shown)
+        self.view_vars["rgb"] = tk.BooleanVar(value=True)
+        self.view_checkbuttons["rgb"] = ttk.Checkbutton(view_select_frame, text="RGB", variable=self.view_vars["rgb"])
+        self.view_checkbuttons["rgb"].grid(row=0, column=1, padx=5)
         
-        # Add placeholders for other possible views
-        for i, vtype in enumerate(["depth", "disparity", "confidence"]):
-            self.view_vars[vtype] = BooleanVar(value=False)
-            cb = ttk.Checkbutton(view_select_frame, text=vtype.title(), variable=self.view_vars[vtype])
-            cb.grid(row=0, column=i+2, padx=5)
-            # By default, we might hide them until the camera is connected; see update_view_ui_for_available_types()
-            cb.grid_remove()
+        # Create checkboxes for additional views ("depth", "disparity", "confidence")
+        view_names = ["depth", "disparity", "confidence"]
+        for i, view_name in enumerate(view_names, start=2):
+            self.view_vars[view_name] = tk.BooleanVar(value=False)
+            self.view_checkbuttons[view_name] = ttk.Checkbutton(view_select_frame, text=view_name.title(), variable=self.view_vars[view_name])
+            # Initially, hide these checkboxes until the camera connects and you decide to show them:
+            self.view_checkbuttons[view_name].grid(row=0, column=i, padx=5)
+            self.view_checkbuttons[view_name].grid_remove()
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
