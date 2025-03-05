@@ -943,9 +943,11 @@ class MainWindow:
                 if vtype == "rgb":
                     image_rgb = cv2.cvtColor(img_data, cv2.COLOR_BGR2RGB)
                 elif vtype in ["depth", "disparity", "confidence"]:
-                    # Normalize for visualization and ensure type is uint8
                     normed = cv2.normalize(img_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-                    normed = normed.astype('uint8')  # Ensure image type is uint8
+                    if normed.ndim == 3 and normed.shape[2] == 4:
+                        normed = cv2.cvtColor(normed, cv2.COLOR_BGRA2BGR)
+                    elif normed.ndim == 3 and normed.shape[2] not in [1, 3]:
+                        normed = normed[:, :, :3]
                     colorized = cv2.applyColorMap(normed, cv2.COLORMAP_JET)
                     image_rgb = cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)
                 else:
@@ -1181,7 +1183,7 @@ class MainWindow:
         
         self.root.destroy()
 
-    def format_coordinate(coord, is_lat=True):
+    def format_coordinate(self, coord, is_lat=True):
         """
         Convert a decimal coordinate into a DMS (degrees, minutes, seconds) string.
         Returns a string like: 37°48'30.00" N or 122°24'15.00" W.
@@ -1190,8 +1192,7 @@ class MainWindow:
             d = abs(coord)
             degrees = int(d)
             minutes = int((d - degrees) * 60)
-            seconds = (d - degrees - minutes/60) * 3600
-            direction = ''
+            seconds = (d - degrees - minutes / 60) * 3600
             if is_lat:
                 direction = 'N' if coord >= 0 else 'S'
             else:
@@ -1218,7 +1219,7 @@ class MainWindow:
                 self.gps_status_labels["gps_latitude"].config(text=self.format_coordinate(latitude, is_lat=True))
             else:
                 self.gps_status_labels["gps_latitude"].config(text="N/A")
-            
+
             if longitude is not None:
                 self.gps_status_labels["gps_longitude"].config(text=self.format_coordinate(longitude, is_lat=False))
             else:
