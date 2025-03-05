@@ -770,7 +770,53 @@ class MainWindow:
         
         if count == 0:
             self.nmea_text.insert(tk.END, "No data received.\n")
-        
+        else 
+            # Retrieve the latest parsed data from the GPSReceiver
+            data = self.gps.current_data
+            output = []
+            output.append("--- User Friendly GPS Data ---")
+            # Fix Quality
+            fix_quality = data.get("fix_quality")
+            if fix_quality is None or fix_quality == 0:
+                fix_type = "No Fix"
+            elif fix_quality == 1:
+                fix_type = "GPS Fix"
+            elif fix_quality == 2:
+                fix_type = "DGPS Fix"
+            else:
+                fix_type = str(fix_quality)
+            output.append(f"Fix Quality: {fix_type}")
+
+            # Satellites
+            satellites = data.get("satellites")
+            output.append(f"Satellites: {satellites if satellites is not None else 'N/A'}")
+
+            # Coordinates
+            lat = data.get("latitude")
+            lon = data.get("longitude")
+            if lat is not None and lon is not None:
+                dms_lat = format_coordinate(lat, is_lat=True)
+                dms_lon = format_coordinate(lon, is_lat=False)
+                output.append(f"Position: {dms_lat}, {dms_lon}")
+                output.append(f"Google Maps: https://maps.google.com/?q={lat},{lon}")
+            else:
+                output.append("Position: N/A")
+
+            # Altitude
+            altitude = data.get("altitude")
+            output.append(f"Altitude: {altitude} m" if altitude is not None else "Altitude: N/A")
+
+            # Speed
+            speed = data.get("speed")
+            output.append(f"Speed: {speed} km/h" if speed is not None else "Speed: N/A")
+
+            # Timestamp
+            timestamp = data.get("timestamp")
+            output.append(f"GPS Time: {timestamp}" if timestamp is not None else "GPS Time: N/A")
+
+            for userfriendlyData in output:
+                self.nmea_text.insert(tk.END, userfriendlyData + "\n")
+
         self.nmea_text.insert(tk.END, "--- Test Complete ---\n\n")
         self.nmea_text.see(tk.END)
 
