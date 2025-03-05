@@ -28,21 +28,10 @@ DEFAULT_SETTINGS = {
         "whitebalance": -1,  # -1 for auto
     },
     "gps": {
-        "active_device": "default",
-        "devices": {
-            "default": {
-                "model": "uBlox",
-                "port": "/dev/ttyACM0",
-                "baud_rate": 9600,
-                "timeout": 1.0
-            },
-            "bu353n5": {
-                "model": "BU353N5",
-                "port": "/dev/ttyUSB2",
-                "baud_rate": 4800,
-                "timeout": 1.0
-            }
-        }
+        "model": "BU353N5",
+        "port": "/dev/ttyUSB2",  # Default port, will be editable in UI
+        "baud_rate": 4800,       # Fixed baud rate for BU-353N5
+        "timeout": 1.0
     }
 }
 

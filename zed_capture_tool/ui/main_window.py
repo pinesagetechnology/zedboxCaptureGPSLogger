@@ -649,26 +649,13 @@ class MainWindow:
         self.camera.disconnect()
 
     def on_connect_gps_clicked(self):
-        """Connect to GPS receiver from GPS tab"""
+        """Connect to GPS receiver"""
         settings = self.update_settings_from_ui()
         
         self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
         self.root.update()
         
-        # Update UI immediately to show trying to connect
-        self.gps_status_labels["gps_connection_status"].config(text="Connecting...")
-        self.gps_status_labels["gps_connection_status"].config(foreground="orange")
-        self.root.update()
-        
-        # Enable verbose logging for connection
-        old_level = logging.getLogger("GPSReceiver").level
-        logging.getLogger("GPSReceiver").setLevel(logging.DEBUG)
-        
-        # Connect to GPS
         success = self.gps.connect(settings)
-        
-        # Reset logging level
-        logging.getLogger("GPSReceiver").setLevel(old_level)
         
         if success:
             self.root.title("ZED Camera Capture Tool")
@@ -677,30 +664,13 @@ class MainWindow:
             if not self.capture_controller and self.camera.is_connected:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
                 
-            # Update GPS status labels
-            self.gps_status_labels["gps_connection_status"].config(text="Connected")
-            self.gps_status_labels["gps_connection_status"].config(foreground="green")
-            
-            # Update UI
-            self.gps_connect_button.state(['disabled'])
-            self.gps_disconnect_button.state(['!disabled'])
-            self.gps_test_button.state(['!disabled'])
-            
-            # Start GPS monitoring
-            self.start_gps_monitoring()
-            
             return True
         else:
             self.root.title("ZED Camera Capture Tool")
-            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed")
-            self.gps_status_labels["gps_connection_status"].config(foreground="red")
-            
-            # Get the selected device name for better error message
-            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
-            port = settings["gps"]["devices"][active_device]["port"]
+            port = settings["gps"]["port"]
             
             messagebox.showerror("Connection Error", 
-                            f"Failed to connect to GPS device '{active_device}' on {port}. "
+                            f"Failed to connect to GPS on {port}. "
                             "Please check connections and port settings.")
             return False
 
@@ -1243,132 +1213,146 @@ class MainWindow:
         # Destroy window
         self.root.destroy()
 
-    def setup_gps_tab(self):
-        """Set up the GPS testing and monitoring tab"""
-            
-        # Main frame
-        main_frame = ttk.Frame(self.gps_tab)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+    def setup_settings_tab(self):
+        """Set up the settings tab UI"""
         
-        # GPS Connection Frame
-        conn_frame = ttk.LabelFrame(main_frame, text="GPS Connection")
-        conn_frame.pack(fill=tk.X, padx=10, pady=10)
+        # Create a notebook for settings categories
+        settings_notebook = ttk.Notebook(self.settings_tab)
+        settings_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Device selection
-        device_frame = ttk.Frame(conn_frame)
-        device_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Camera settings tab
+        camera_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(camera_tab, text="Camera")
         
-        ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
+        # Camera mode
+        mode_frame = ttk.Frame(camera_tab)
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Get available devices from settings
-        available_devices = list(self.settings["gps"]["devices"].keys())
+        ttk.Label(mode_frame, text="Camera Mode:").grid(row=0, column=0, sticky=tk.W)
         
-        # Create device selection dropdown (moved from settings tab)
-        device_combo = ttk.Combobox(device_frame, textvariable=self.gps_device_var, 
-                                values=available_devices, state="readonly", width=15)
-        device_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
-        device_combo.bind("<<ComboboxSelected>>", self.on_gps_device_changed)
-
-       # Port and baud rate
-        settings_frame = ttk.Frame(conn_frame)
-        settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        mode_combo = ttk.Combobox(mode_frame, textvariable=self.camera_mode_var, 
+                                values=["auto", "manual"], state="readonly", width=15)
+        mode_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        mode_combo.bind("<<ComboboxSelected>>", self.on_camera_mode_changed)
         
-        ttk.Label(settings_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
+        # Resolution and FPS
+        res_frame = ttk.Frame(camera_tab)
+        res_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        port_entry = ttk.Entry(settings_frame, textvariable=self.gps_port_var, width=20)
-        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
+        ttk.Label(res_frame, text="Resolution:").grid(row=0, column=0, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        res_combo = ttk.Combobox(res_frame, textvariable=self.resolution_var, 
+                                values=["HD2K", "HD1080", "HD720", "VGA"], 
+                                state="readonly", width=15)
+        res_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        baud_combo = ttk.Combobox(settings_frame, textvariable=self.gps_baud_var, 
-                                values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                state="readonly", width=10)
-        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
+        ttk.Label(res_frame, text="FPS:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
         
-        # Connect buttons
-        button_frame = ttk.Frame(conn_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=5)
+        fps_combo = ttk.Combobox(res_frame, textvariable=self.fps_var, 
+                                values=[15, 30, 60, 100], 
+                                state="readonly", width=15)
+        fps_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        self.gps_connect_button = ttk.Button(button_frame, text="Connect GPS", 
-                                        command=self.on_gps_connect_clicked)
-        self.gps_connect_button.pack(side=tk.LEFT, padx=5)
+        # Camera settings sliders
+        settings_frame = ttk.Frame(camera_tab)
+        settings_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        self.gps_disconnect_button = ttk.Button(button_frame, text="Disconnect GPS", 
-                                            command=self.on_gps_disconnect_clicked)
-        self.gps_disconnect_button.pack(side=tk.LEFT, padx=5)
-        self.gps_disconnect_button.state(['disabled'])
-        
-        self.gps_test_button = ttk.Button(button_frame, text="Test GPS Signal", 
-                                        command=self.on_test_gps_clicked)
-        self.gps_test_button.pack(side=tk.LEFT, padx=5)
-        self.gps_test_button.state(['disabled'])
-        
-        # GPS Status Frame
-        status_frame = ttk.LabelFrame(main_frame, text="GPS Status")
-        status_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Status grid - show key GPS data
-        self.gps_status_grid = ttk.Frame(status_frame)
-        self.gps_status_grid.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Create status labels
-        status_labels = [
-            ("Connection Status:", "Not Connected", "gps_connection_status"),
-            ("Fix Type:", "No Fix", "gps_fix_type"),
-            ("Satellites:", "0", "gps_satellites"),
-            ("Latitude:", "N/A", "gps_latitude"),
-            ("Longitude:", "N/A", "gps_longitude"),
-            ("Altitude:", "N/A", "gps_altitude"),
-            ("Speed:", "N/A", "gps_speed"),
-            ("Time:", "N/A", "gps_time")
+        # Create settings sliders
+        settings_info = [
+            ("brightness", "Brightness", 0, 8),
+            ("contrast", "Contrast", 0, 8),
+            ("hue", "Hue", 0, 11),
+            ("saturation", "Saturation", 0, 8),
+            ("exposure", "Exposure", -1, 100, True),
+            ("gain", "Gain", -1, 100, True),
+            ("whitebalance", "White Balance", -1, 6500, True)
         ]
         
-        self.gps_status_labels = {}
+        self.camera_setting_widgets = {}
         
-        for i, (label_text, default_value, variable_name) in enumerate(status_labels):
-            ttk.Label(self.gps_status_grid, text=label_text).grid(row=i, column=0, sticky=tk.W, pady=2)
-            label = ttk.Label(self.gps_status_grid, text=default_value)
-            label.grid(row=i, column=1, sticky=tk.W, pady=2, padx=5)
-            self.gps_status_labels[variable_name] = label
+        for idx, setting in enumerate(settings_info):
+            if len(setting) == 4:
+                name, label, min_val, max_val = setting
+                auto_option = False
+            else:
+                name, label, min_val, max_val, auto_option = setting
+                
+            # Create setting frame
+            setting_frame = ttk.LabelFrame(settings_frame, text=label)
+            setting_frame.grid(row=idx // 2, column=idx % 2, padx=10, pady=5, sticky=tk.W+tk.E+tk.N+tk.S)
+            
+            # Auto checkbox if applicable
+            if auto_option:
+                auto_check = ttk.Checkbutton(setting_frame, text="Auto", 
+                                        variable=self.camera_settings_vars[name]["auto"],
+                                        command=lambda n=name: self.on_auto_checkbox_changed(n))
+                auto_check.pack(anchor=tk.W, padx=5, pady=2)
+                
+            # Create scale
+            scale = ttk.Scale(setting_frame, from_=min_val if not auto_option else min_val + 1, 
+                            to=max_val, orient=tk.HORIZONTAL, 
+                            variable=self.camera_settings_vars[name]["value"],
+                            command=lambda val, n=name: self.on_scale_value_changed(n, val))
+            scale.pack(fill=tk.X, padx=5, pady=5)
+            
+            # Value label
+            value_label = ttk.Label(setting_frame, text=str(self.camera_settings_vars[name]["value"].get()))
+            value_label.pack(anchor=tk.E, padx=5, pady=2)
+            
+            # Store widgets
+            self.camera_setting_widgets[name] = {
+                "scale": scale,
+                "label": value_label,
+                "auto": auto_check if auto_option else None
+            }
+            
+            # Disable scale if auto is checked
+            if auto_option and self.camera_settings_vars[name]["auto"].get():
+                scale.state(['disabled'])
         
-        # Raw NMEA data display
-        nmea_frame = ttk.LabelFrame(main_frame, text="Raw NMEA Data")
-        nmea_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Camera connect buttons
+        cam_button_frame = ttk.Frame(camera_tab)
+        cam_button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Text widget with scrollbar for NMEA sentences
-        self.nmea_text = tk.Text(nmea_frame, height=8, width=80, wrap=tk.WORD)
-        self.nmea_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+        self.connect_camera_button = ttk.Button(cam_button_frame, text="Connect Camera", 
+                                            command=self.on_connect_camera_clicked)
+        self.connect_camera_button.pack(side=tk.LEFT, padx=5)
         
-        scrollbar = ttk.Scrollbar(nmea_frame, orient="vertical", command=self.nmea_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.nmea_text.config(yscrollcommand=scrollbar.set)
+        self.disconnect_camera_button = ttk.Button(cam_button_frame, text="Disconnect Camera", 
+                                                command=self.on_disconnect_camera_clicked)
+        self.disconnect_camera_button.pack(side=tk.LEFT, padx=5)
+        self.disconnect_camera_button.state(['disabled'])
         
-        # Button to clear NMEA log
-        clear_button = ttk.Button(nmea_frame, text="Clear Log", 
-                                command=lambda: self.nmea_text.delete(1.0, tk.END))
-        clear_button.pack(pady=5)
-
-        # Live GPS Data Display
-        live_data_frame = ttk.Frame(status_frame)
-        live_data_frame.pack(fill=tk.X, padx=10, pady=5)
-        self.live_gps_label = ttk.Label(live_data_frame, text="Live GPS Data: N/A")
-        self.live_gps_label.pack(side=tk.LEFT)
-
-        # Add device management buttons
-        mgmt_frame = ttk.Frame(self.gps_tab)
-        mgmt_frame.pack(fill=tk.X, padx=10, pady=5)
+        # GPS settings tab (simplified for BU-353N5 only)
+        gps_tab = ttk.Frame(settings_notebook)
+        settings_notebook.add(gps_tab, text="GPS")
         
-        add_button = ttk.Button(mgmt_frame, text="Add Device", 
-                            command=self.on_add_gps_device)
-        add_button.pack(side=tk.LEFT, padx=5)
+        # GPS Port frame
+        port_frame = ttk.Frame(gps_tab)
+        port_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        edit_button = ttk.Button(mgmt_frame, text="Edit Device", 
-                                command=self.on_edit_gps_device)
-        edit_button.pack(side=tk.LEFT, padx=5)
+        ttk.Label(port_frame, text="BU-353N5 GPS Port:").grid(row=0, column=0, sticky=tk.W)
+        port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
+        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        remove_button = ttk.Button(mgmt_frame, text="Remove Device", 
-                                command=self.on_remove_gps_device)
-        remove_button.pack(side=tk.LEFT, padx=5)
+        # Help text for port selection
+        ttk.Label(port_frame, text="(e.g. /dev/ttyUSB0, /dev/ttyUSB1, /dev/ttyUSB2)").grid(
+            row=0, column=2, sticky=tk.W, padx=5)
+        
+        # Additional info about baud rate
+        info_frame = ttk.Frame(gps_tab)
+        info_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(info_frame, text="Baud Rate:").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(info_frame, text="4800 (fixed for BU-353N5)").grid(row=0, column=1, sticky=tk.W, padx=5)
+        
+        # Save button
+        save_frame = ttk.Frame(self.settings_tab)
+        save_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        save_button = ttk.Button(save_frame, text="Save Settings", 
+                            command=self.on_save_settings_clicked)
+        save_button.pack(side=tk.RIGHT, padx=5)
 
     def on_gps_connect_clicked(self):
         """Connect to GPS receiver from GPS tab"""
@@ -1647,191 +1631,6 @@ class MainWindow:
         # Update active device in settings
         self.settings["gps"]["active_device"] = device
 
-    def on_add_gps_device(self):
-        """Add a new GPS device configuration"""
-        try:
-            # Create a dialog window
-            dialog = tk.Toplevel(self.root)
-            dialog.title("Add GPS Device")
-            dialog.geometry("400x300")
-            dialog.transient(self.root)  # Make it a child of the main window
-            dialog.grab_set()  # Make it modal
-            
-            # Device fields
-            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-            name_var = StringVar()
-            name_entry = ttk.Entry(dialog, textvariable=name_var, width=25)
-            name_entry.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-            model_var = StringVar(value="uBlox")
-            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
-                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
-            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-            port_var = StringVar(value="/dev/ttyUSB2")
-            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
-            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
-            baud_var = IntVar(value=9600)
-            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
-                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                    state="readonly", width=10)
-            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            # Function to handle model change - update default port/baud
-            def on_model_change(event=None):
-                model = model_var.get()
-                if model == "uBlox":
-                    port_var.set("/dev/ttyACM0")
-                    baud_var.set(9600)
-                elif model == "BU353N5":
-                    port_var.set("/dev/ttyUSB2")
-                    baud_var.set(4800)
-                    
-            model_combo.bind("<<ComboboxSelected>>", on_model_change)
-            
-            # Buttons
-            button_frame = ttk.Frame(dialog)
-            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
-            
-            def on_save():
-                # Validate
-                device_name = name_var.get().strip()
-                if not device_name:
-                    messagebox.showerror("Error", "Device name cannot be empty", parent=dialog)
-                    return
-                    
-                if device_name in self.settings["gps"]["devices"]:
-                    messagebox.showerror("Error", f"Device '{device_name}' already exists", parent=dialog)
-                    return
-                    
-                # Create new device config
-                self.settings["gps"]["devices"][device_name] = {
-                    "model": model_var.get(),
-                    "port": port_var.get(),
-                    "baud_rate": baud_var.get(),
-                    "timeout": 1.0
-                }
-                
-                # Update device list in UI
-                device_combo = self.notebook.nametowidget(
-                    self.notebook.select()).nametowidget("!frame.!frame.!combobox")
-                device_combo['values'] = list(self.settings["gps"]["devices"].keys())
-                
-                # Close dialog
-                dialog.destroy()
-                
-                # Save settings
-                save_settings(self.settings)
-                
-                # Show success message
-                messagebox.showinfo("Success", f"Device '{device_name}' added successfully")
-                
-            def on_cancel():
-                dialog.destroy()
-                
-            save_button = ttk.Button(button_frame, text="Save", command=on_save)
-            save_button.pack(side=tk.LEFT, padx=10)
-            
-            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
-            cancel_button.pack(side=tk.LEFT, padx=10)
-            
-        except Exception as e:
-            self.logger.error(f"Error adding GPS device: {e}")
-            messagebox.showerror("Error", f"Failed to add GPS device: {e}")
-
-    def on_edit_gps_device(self):
-        """Edit an existing GPS device configuration"""
-        try:
-            # Get current device
-            current_device = self.gps_device_var.get()
-            
-            if current_device not in self.settings["gps"]["devices"]:
-                messagebox.showerror("Error", "Please select a device to edit")
-                return
-                
-            # Cannot edit the default device
-            if current_device == "default" and len(self.settings["gps"]["devices"]) > 1:
-                messagebox.showerror("Error", "The default device cannot be edited. Please add a new device instead.")
-                return
-                
-            # Get current device config
-            device_config = self.settings["gps"]["devices"][current_device]
-            
-            # Create a dialog window
-            dialog = tk.Toplevel(self.root)
-            dialog.title(f"Edit GPS Device: {current_device}")
-            dialog.geometry("400x300")
-            dialog.transient(self.root)  # Make it a child of the main window
-            dialog.grab_set()  # Make it modal
-            
-            # Device fields - name is not editable
-            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-            name_label = ttk.Label(dialog, text=current_device)
-            name_label.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-            model_var = StringVar(value=device_config.get("model", "uBlox"))
-            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
-                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
-            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-            port_var = StringVar(value=device_config.get("port", "/dev/ttyACM0"))
-            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
-            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
-            baud_var = IntVar(value=device_config.get("baud_rate", 9600))
-            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
-                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                    state="readonly", width=10)
-            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            # Buttons
-            button_frame = ttk.Frame(dialog)
-            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
-            
-            def on_save():
-                # Update device config
-                self.settings["gps"]["devices"][current_device] = {
-                    "model": model_var.get(),
-                    "port": port_var.get(),
-                    "baud_rate": baud_var.get(),
-                    "timeout": device_config.get("timeout", 1.0)
-                }
-                
-                # Update UI if this is the active device
-                if current_device == self.settings["gps"]["active_device"]:
-                    self.gps_port_var.set(port_var.get())
-                    self.gps_baud_var.set(baud_var.get())
-                
-                # Close dialog
-                dialog.destroy()
-                
-                # Save settings
-                save_settings(self.settings)
-                
-                # Show success message
-                messagebox.showinfo("Success", f"Device '{current_device}' updated successfully")
-                
-            def on_cancel():
-                dialog.destroy()
-                
-            save_button = ttk.Button(button_frame, text="Save", command=on_save)
-            save_button.pack(side=tk.LEFT, padx=10)
-            
-            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
-            cancel_button.pack(side=tk.LEFT, padx=10)
-            
-        except Exception as e:
-            self.logger.error(f"Error editing GPS device: {e}")
-            messagebox.showerror("Error", f"Failed to edit GPS device: {e}")
-
-    def on_remove_gps_device(self):
         """Remove a GPS device configuration"""
         try:
             # Get current device

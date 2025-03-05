@@ -54,16 +54,12 @@ class GPSReceiver:
             self.disconnect()
             
         try:
-            # Get active device config
-            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
-            device_config = settings["gps"]["devices"][active_device]
-            self.current_model = device_config["model"]
-
-            port = device_config["port"]
-            baud_rate = device_config["baud_rate"]
-            timeout = device_config.get("timeout", 1.0)
+            # Get GPS settings
+            port = settings["gps"]["port"]
+            baud_rate = 4800  # Fixed for BU-353N5
+            timeout = 1.0
             
-            self.logger.info(f"Attempting to connect to GPS model {self.current_model} on {port} at {baud_rate} baud")
+            self.logger.info(f"Attempting to connect to BU-353N5 GPS on {port}")
             
             # Try opening the port
             self.serial_port = serial.Serial(port, baud_rate, timeout=timeout)
@@ -94,13 +90,12 @@ class GPSReceiver:
             self.thread.daemon = True
             self.thread.start()
             
-            self.logger.info(f"Connected to GPS device '{active_device}' on port {port}")
+            self.logger.info(f"Connected to GPS device on port {port}")
             return True
             
         except Exception as e:
             self.logger.error(f"Error connecting to GPS: {e}")
             return False
-            
     def disconnect(self):
         """Disconnect from the GPS device"""
         if self.is_connected:
