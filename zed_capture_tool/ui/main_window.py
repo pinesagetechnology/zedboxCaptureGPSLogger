@@ -30,10 +30,7 @@ class MainWindow:
     def __init__(self, root):
         self.root = root
         self.root.title("ZED Camera Capture Tool")
-        self.root.geometry("2400x2100")  # Triple the original size: 800*3 x 700*3
-        
-        # Allow window resizing (default behavior)
-        # self.root.resizable(True, True)
+        self.root.geometry("2400x2100")  # Example large size
         
         # Set up logging
         self.logger = logging.getLogger("MainWindow")
@@ -44,16 +41,19 @@ class MainWindow:
         # Initialize modules
         self.camera = ZedCamera()
         self.gps = GPSReceiver()
-        self.capture_controller = None  # Will initialize after camera and GPS are connected
+        self.capture_controller = None  # Created after we connect devices
         
-        # Variables for UI elements
-        self.capture_mode_var = StringVar(value="time" if self.settings["capture_mode"] == "time" else "gps")
+        # Variables for UI
+        self.capture_mode_var = StringVar(value=self.settings["capture_mode"])
         self.time_interval_var = IntVar(value=self.settings["time_interval"])
         self.gps_interval_var = DoubleVar(value=self.settings["gps_interval"])
         self.output_dir_var = StringVar(value=self.settings["output_directory"])
         self.camera_mode_var = StringVar(value=self.settings["camera"]["mode"])
         self.resolution_var = StringVar(value=self.settings["camera"]["resolution"])
         self.fps_var = IntVar(value=self.settings["camera"]["fps"])
+        
+        # GPS port
+        self.gps_port_var = StringVar(value=self.settings["gps"]["port"])
         
         # Camera setting variables
         self.camera_settings_vars = {}
@@ -63,11 +63,7 @@ class MainWindow:
                 "auto": BooleanVar(value=(self.settings["camera"][name] == -1))
             }
         
-        # GPS setting variables
-        self.gps_port_var = StringVar(value=self.settings["gps"]["port"])
-        self.gps_baud_var = IntVar(value=self.settings["gps"]["baud_rate"])
-        
-        # Set up UI
+        # UI setup
         self.setup_ui()
         
         # Status variables
@@ -77,37 +73,32 @@ class MainWindow:
         # Timer for UI updates
         self.update_ui()
         
-        # Connect to devices
+        # Attempt to connect to camera & GPS on startup
         self.connect_devices()
 
     def setup_ui(self):
-        """Set up the main user interface"""
-        
-        # Create a notebook (tabbed interface)
+        """Top-level UI layout"""
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Capture tab
+        # Tabs:
         self.capture_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.capture_tab, text="Photo Capture")
+        self.video_tab   = ttk.Frame(self.notebook)
+        self.gps_tab     = ttk.Frame(self.notebook)
+        self.settings_tab= ttk.Frame(self.notebook)
+        
+        self.notebook.add(self.capture_tab,   text="Photo Capture")
+        self.notebook.add(self.video_tab,     text="Video Recording")
+        self.notebook.add(self.gps_tab,       text="GPS Monitor")
+        self.notebook.add(self.settings_tab,  text="Settings")
+        
+        # Set up each tab
         self.setup_capture_tab()
-        
-        # Video tab
-        self.video_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.video_tab, text="Video Recording")
         self.setup_video_tab()
-        
-        # GPS tab
-        self.gps_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.gps_tab, text="GPS Monitor")
         self.setup_gps_tab()
-        
-        # Settings tab
-        self.settings_tab = ttk.Frame(self.notebook)
-        self.notebook.add(self.settings_tab, text="Settings")
         self.setup_settings_tab()
         
-        # Status bar
+        # Status bar at the bottom
         self.status_frame = ttk.Frame(self.root)
         self.status_frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -124,128 +115,105 @@ class MainWindow:
         self.capture_count_label.pack(side=tk.LEFT, padx=5)
 
     def setup_capture_tab(self):
-        """Set up the capture tab UI with multiple camera views"""
-        
-        # Preview area with fixed size
+        """Photo capture UI, including preview frames."""
         preview_frame = ttk.LabelFrame(self.capture_tab, text="Camera Preview")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Create a frame to hold all preview images
         views_frame = ttk.Frame(preview_frame)
-        views_frame.pack(padx=10, pady=10)  # Don't use fill and expand to maintain stable size
+        views_frame.pack(padx=10, pady=10)
         
-        # Create labels for each view type
+        # We'll hold references to the label widgets in a dict
         self.preview_labels = {}
         
-        # Fixed size for each preview (width, height in pixels)
+        # Dimensions for each preview
         preview_width = 320
         preview_height = 240
         
-        # RGB View - fixed size
+        # Make frames for each type of preview (RGB, Depth, etc.)
+        # 1) RGB
         rgb_frame = ttk.LabelFrame(views_frame, text="RGB View")
         rgb_frame.grid(row=0, column=0, padx=5, pady=5)
         
-        # Use a Canvas with fixed size to contain the preview label
         rgb_canvas = tk.Canvas(rgb_frame, width=preview_width, height=preview_height, bg="#222222")
-        rgb_canvas.pack(padx=2, pady=2)
+        rgb_canvas.pack()
         
         self.preview_labels["rgb"] = tk.Label(rgb_canvas, text="No RGB preview", bg="#222222", fg="white")
         self.preview_labels["rgb"].place(x=preview_width//2, y=preview_height//2, anchor="center")
         
-        # Depth View - fixed size
+        # 2) Depth
         depth_frame = ttk.LabelFrame(views_frame, text="Depth Map")
         depth_frame.grid(row=0, column=1, padx=5, pady=5)
         
         depth_canvas = tk.Canvas(depth_frame, width=preview_width, height=preview_height, bg="#222222")
-        depth_canvas.pack(padx=2, pady=2)
+        depth_canvas.pack()
         
         self.preview_labels["depth"] = tk.Label(depth_canvas, text="No depth preview", bg="#222222", fg="white")
         self.preview_labels["depth"].place(x=preview_width//2, y=preview_height//2, anchor="center")
         
-        # Third View (might be Disparity or Confidence depending on SDK version) - fixed size
+        # 3) Disparity or Confidence
         third_frame = ttk.LabelFrame(views_frame, text="Additional View")
         third_frame.grid(row=0, column=2, padx=5, pady=5)
         
         third_canvas = tk.Canvas(third_frame, width=preview_width, height=preview_height, bg="#222222")
-        third_canvas.pack(padx=2, pady=2)
+        third_canvas.pack()
         
-        # We'll use a generic key first, then update the label text when we know what's available
         self.preview_labels["disparity"] = tk.Label(third_canvas, text="No additional view", bg="#222222", fg="white")
         self.preview_labels["disparity"].place(x=preview_width//2, y=preview_height//2, anchor="center")
         
-        # Store canvas references for later use
-        self.preview_canvases = {
-            "rgb": rgb_canvas,
-            "depth": depth_canvas,
-            "disparity": third_canvas
-        }
-        
-        # Also store the preview dimensions for use in other methods
+        # Also store the preview dimensions so we can reference them in update_preview()
         self.preview_dimensions = {
             "width": preview_width,
             "height": preview_height
         }
         
-        # Capture mode selection
+        # Checkboxes for which views to capture
         view_select_frame = ttk.Frame(preview_frame)
         view_select_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(view_select_frame, text="Views to Capture:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
-        # Checkboxes for selecting views to capture - we'll populate them dynamically when camera connects
         self.view_vars = {}
-        self.view_checkbuttons = {}
-        
-        # Add RGB checkbox (always available)
+        # Always show "rgb"
         self.view_vars["rgb"] = BooleanVar(value=True)
-        self.view_checkbuttons["rgb"] = ttk.Checkbutton(
-            view_select_frame, text="RGB", variable=self.view_vars["rgb"]
-        )
-        self.view_checkbuttons["rgb"].grid(row=0, column=1, padx=5)
+        cb_rgb = ttk.Checkbutton(view_select_frame, text="RGB", variable=self.view_vars["rgb"])
+        cb_rgb.grid(row=0, column=1, padx=5)
         
-        # Add placeholders for other view types
-        view_types = ["depth", "disparity", "confidence"]  # Removed "point_cloud"
-        for i, view_type in enumerate(view_types):
-            self.view_vars[view_type] = BooleanVar(value=False)
-            self.view_checkbuttons[view_type] = ttk.Checkbutton(
-                view_select_frame, text=view_type.title(), variable=self.view_vars[view_type]
-            )
-            self.view_checkbuttons[view_type].grid(row=0, column=i+2, padx=5)
-            
-            # Initially hide all except RGB
-            if view_type != "rgb":
-                self.view_checkbuttons[view_type].grid_remove()
+        # Add placeholders for other possible views
+        for i, vtype in enumerate(["depth", "disparity", "confidence"]):
+            self.view_vars[vtype] = BooleanVar(value=False)
+            cb = ttk.Checkbutton(view_select_frame, text=vtype.title(), variable=self.view_vars[vtype])
+            cb.grid(row=0, column=i+2, padx=5)
+            # By default, we might hide them until the camera is connected; see update_view_ui_for_available_types()
+            cb.grid_remove()
         
         # Capture controls
         control_frame = ttk.LabelFrame(self.capture_tab, text="Capture Controls")
         control_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Capture mode
+        # Radio buttons for "time" vs "gps" mode
         mode_frame = ttk.Frame(control_frame)
         mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Time interval option
-        time_radio = ttk.Radiobutton(mode_frame, text="Time Interval:", 
-                                    variable=self.capture_mode_var, value="time", 
-                                    command=self.on_capture_mode_changed)
+        time_radio = ttk.Radiobutton(mode_frame,
+                                     text="Time Interval:",
+                                     variable=self.capture_mode_var,
+                                     value="time",
+                                     command=self.on_capture_mode_changed)
         time_radio.grid(row=0, column=0, sticky=tk.W)
         
-        time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, 
-                                textvariable=self.time_interval_var)
+        time_spin = ttk.Spinbox(mode_frame, from_=1, to=3600, width=10, textvariable=self.time_interval_var)
         time_spin.grid(row=0, column=1, padx=5)
-        
         ttk.Label(mode_frame, text="seconds").grid(row=0, column=2, sticky=tk.W)
         
-        # GPS interval option
-        gps_radio = ttk.Radiobutton(mode_frame, text="GPS Distance:", 
-                                    variable=self.capture_mode_var, value="gps", 
+        gps_radio = ttk.Radiobutton(mode_frame,
+                                    text="GPS Distance:",
+                                    variable=self.capture_mode_var,
+                                    value="gps",
                                     command=self.on_capture_mode_changed)
         gps_radio.grid(row=0, column=3, sticky=tk.W, padx=(20, 0))
         
-        gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, 
-                                textvariable=self.gps_interval_var)
+        gps_spin = ttk.Spinbox(mode_frame, from_=1, to=1000, width=10, textvariable=self.gps_interval_var)
         gps_spin.grid(row=0, column=4, padx=5)
-        
         ttk.Label(mode_frame, text="meters").grid(row=0, column=5, sticky=tk.W)
         
         # Output directory
@@ -253,9 +221,8 @@ class MainWindow:
         dir_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
-        
         dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
-        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
+        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W + tk.E)
         
         browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
         browse_button.grid(row=0, column=2, padx=5)
@@ -266,211 +233,329 @@ class MainWindow:
         button_frame = ttk.Frame(control_frame)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.start_button = ttk.Button(button_frame, text="Start Capture", 
-                                        command=self.on_start_capture_clicked)
+        self.start_button = ttk.Button(button_frame, text="Start Capture",
+                                       command=self.on_start_capture_clicked)
         self.start_button.pack(side=tk.LEFT, padx=5)
         self.start_button.state(['disabled'])  # Disabled until camera is connected
         
-        self.stop_button = ttk.Button(button_frame, text="Stop Capture", 
-                                        command=self.on_stop_capture_clicked)
+        self.stop_button = ttk.Button(button_frame, text="Stop Capture",
+                                      command=self.on_stop_capture_clicked)
         self.stop_button.pack(side=tk.LEFT, padx=5)
-        self.stop_button.state(['disabled'])  # Disabled until capture starts
+        self.stop_button.state(['disabled'])
         
-        self.single_capture_button = ttk.Button(button_frame, text="Single Capture", 
+        self.single_capture_button = ttk.Button(button_frame, text="Single Capture",
                                                 command=self.on_single_capture_clicked)
         self.single_capture_button.pack(side=tk.LEFT, padx=5)
-        self.single_capture_button.state(['disabled'])  # Disabled until camera is connected
-
-    def setup_settings_tab(self):
-        """Set up the settings tab UI"""
+        self.single_capture_button.state(['disabled'])
     
-        # Create a notebook for settings categories
+    def setup_video_tab(self):
+        """Set up the video recording UI."""
+        control_frame = ttk.LabelFrame(self.video_tab, text="Video Recording")
+        control_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Same output directory
+        dir_frame = ttk.Frame(control_frame)
+        dir_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
+        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
+        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W + tk.E)
+        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
+        browse_button.grid(row=0, column=2, padx=5)
+        dir_frame.columnconfigure(1, weight=1)
+        
+        # Video settings
+        settings_frame = ttk.Frame(control_frame)
+        settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(settings_frame, text="Codec:").grid(row=0, column=0, sticky=tk.W)
+        self.codec_var = StringVar(value="H264")
+        codec_combo = ttk.Combobox(settings_frame,
+                                   textvariable=self.codec_var,
+                                   values=["H264", "H265"],
+                                   state="readonly",
+                                   width=10)
+        codec_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        ttk.Label(settings_frame, text="Bitrate (Kbps):").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        self.bitrate_var = IntVar(value=8000)
+        bitrate_spin = ttk.Spinbox(settings_frame, from_=1000, to=50000, increment=1000,
+                                   textvariable=self.bitrate_var, width=8)
+        bitrate_spin.grid(row=0, column=3, padx=5, sticky=tk.W)
+        
+        # Duration limit
+        ttk.Label(settings_frame, text="Duration limit (sec):").grid(row=1, column=0, sticky=tk.W, pady=(10,0))
+        self.duration_limit_var = IntVar(value=0)
+        duration_spin = ttk.Spinbox(settings_frame, from_=0, to=3600, increment=10,
+                                    textvariable=self.duration_limit_var, width=8)
+        duration_spin.grid(row=1, column=1, padx=5, sticky=tk.W, pady=(10,0))
+        ttk.Label(settings_frame, text="(0 = no limit)").grid(row=1, column=2, sticky=tk.W, pady=(10,0))
+        
+        # Record buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        self.start_record_button = ttk.Button(button_frame, text="Start Recording",
+                                              command=self.on_start_recording_clicked)
+        self.start_record_button.pack(side=tk.LEFT, padx=5)
+        self.start_record_button.state(['disabled'])
+        
+        self.stop_record_button = ttk.Button(button_frame, text="Stop Recording",
+                                             command=self.on_stop_recording_clicked)
+        self.stop_record_button.pack(side=tk.LEFT, padx=5)
+        self.stop_record_button.state(['disabled'])
+        
+        # Recording status info
+        status_frame = ttk.LabelFrame(self.video_tab, text="Recording Status")
+        status_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        status_grid = ttk.Frame(status_frame)
+        status_grid.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(status_grid, text="Status:").grid(row=0, column=0, sticky=tk.W)
+        self.recording_status_label = ttk.Label(status_grid, text="Not recording")
+        self.recording_status_label.grid(row=0, column=1, sticky=tk.W)
+        
+        ttk.Label(status_grid, text="Duration:").grid(row=1, column=0, sticky=tk.W)
+        self.recording_duration_label = ttk.Label(status_grid, text="0 seconds")
+        self.recording_duration_label.grid(row=1, column=1, sticky=tk.W)
+        
+        ttk.Label(status_grid, text="Output file:").grid(row=2, column=0, sticky=tk.W)
+        self.recording_file_label = ttk.Label(status_grid, text="None")
+        self.recording_file_label.grid(row=2, column=1, sticky=tk.W)
+        
+        # List of videos
+        list_frame = ttk.LabelFrame(self.video_tab, text="Recorded Videos")
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        list_container = ttk.Frame(list_frame)
+        list_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        self.video_listbox = tk.Listbox(list_container)
+        self.video_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.video_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.video_listbox.config(yscrollcommand=scrollbar.set)
+        
+        refresh_button = ttk.Button(list_frame, text="Refresh List", command=self.refresh_video_list)
+        refresh_button.pack(side=tk.LEFT, padx=5, pady=5)
+
+    def setup_gps_tab(self):
+        """A dedicated tab for GPS status and data."""
+        # Overall status
+        status_frame = ttk.LabelFrame(self.gps_tab, text="GPS Status")
+        status_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        # We'll show multiple fields in a grid
+        status_grid = ttk.Frame(status_frame)
+        status_grid.pack(fill=tk.X, padx=10, pady=10)
+        
+        # We'll keep them in a dictionary for easy reference
+        self.gps_status_labels = {}
+        
+        info_items = [
+            ("gps_connection_status", "Connection:", "Disconnected"),
+            ("gps_fix_type",         "Fix Type:",    "N/A"),
+            ("gps_satellites",       "Satellites:",  "N/A"),
+            ("gps_latitude",         "Latitude:",    "N/A"),
+            ("gps_longitude",        "Longitude:",   "N/A"),
+            ("gps_altitude",         "Altitude:",    "N/A"),
+            ("gps_speed",            "Speed:",       "N/A"),
+            ("gps_time",             "Time:",        "N/A")
+        ]
+        
+        for i, (key, labeltext, default_value) in enumerate(info_items):
+            row = i // 2
+            col = (i % 2)*2
+            ttk.Label(status_grid, text=labeltext).grid(row=row, column=col, sticky=tk.W, padx=5, pady=2)
+            lab = ttk.Label(status_grid, text=default_value)
+            lab.grid(row=row, column=col+1, sticky=tk.W, padx=5, pady=2)
+            self.gps_status_labels[key] = lab
+        
+        # Controls to connect/disconnect
+        control_frame = ttk.LabelFrame(self.gps_tab, text="GPS Control")
+        control_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        port_frame = ttk.Frame(control_frame)
+        port_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
+        port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
+        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
+        ttk.Label(port_frame, text="(baud 4800 fixed)").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
+        
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.gps_connect_button = ttk.Button(button_frame, text="Connect GPS",
+                                             command=self.on_connect_gps_clicked)
+        self.gps_connect_button.pack(side=tk.LEFT, padx=5)
+        
+        self.gps_disconnect_button = ttk.Button(button_frame, text="Disconnect GPS",
+                                                command=self.on_disconnect_gps_clicked)
+        self.gps_disconnect_button.pack(side=tk.LEFT, padx=5)
+        self.gps_disconnect_button.state(['disabled'])
+        
+        self.gps_test_button = ttk.Button(button_frame, text="Test GPS",
+                                          command=self.on_test_gps_clicked)
+        self.gps_test_button.pack(side=tk.LEFT, padx=5)
+        self.gps_test_button.state(['disabled'])
+        
+        # NMEA text display
+        nmea_frame = ttk.LabelFrame(self.gps_tab, text="NMEA Data")
+        nmea_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        nmea_container = ttk.Frame(nmea_frame)
+        nmea_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.nmea_text = tk.Text(nmea_container, height=12, width=80)
+        self.nmea_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        sb = ttk.Scrollbar(nmea_container, orient="vertical", command=self.nmea_text.yview)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.nmea_text.config(yscrollcommand=sb.set)
+        
+        # Clear log
+        button_clear = ttk.Button(nmea_frame, text="Clear",
+                                  command=lambda: self.nmea_text.delete("1.0", tk.END))
+        button_clear.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+    def setup_settings_tab(self):
+        """Camera + GPS settings (sliders, etc.)."""
         settings_notebook = ttk.Notebook(self.settings_tab)
         settings_notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Camera settings tab
+        # Camera tab
         camera_tab = ttk.Frame(settings_notebook)
         settings_notebook.add(camera_tab, text="Camera")
         
-        # Camera mode
+        # Camera Mode
         mode_frame = ttk.Frame(camera_tab)
         mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(mode_frame, text="Camera Mode:").grid(row=0, column=0, sticky=tk.W)
-        
-        mode_combo = ttk.Combobox(mode_frame, textvariable=self.camera_mode_var, 
-                                 values=["auto", "manual"], state="readonly", width=15)
+        mode_combo = ttk.Combobox(mode_frame,
+                                  textvariable=self.camera_mode_var,
+                                  values=["auto", "manual"],
+                                  state="readonly",
+                                  width=15)
         mode_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         mode_combo.bind("<<ComboboxSelected>>", self.on_camera_mode_changed)
         
-        # Resolution and FPS
+        # Resolution & FPS
         res_frame = ttk.Frame(camera_tab)
         res_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(res_frame, text="Resolution:").grid(row=0, column=0, sticky=tk.W)
-        
-        res_combo = ttk.Combobox(res_frame, textvariable=self.resolution_var, 
-                                values=["HD2K", "HD1080", "HD720", "VGA"], 
-                                state="readonly", width=15)
+        res_combo = ttk.Combobox(res_frame,
+                                 textvariable=self.resolution_var,
+                                 values=["HD2K", "HD1080", "HD720", "VGA"],
+                                 state="readonly",
+                                 width=15)
         res_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        ttk.Label(res_frame, text="FPS:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
-        
-        fps_combo = ttk.Combobox(res_frame, textvariable=self.fps_var, 
-                                values=[15, 30, 60, 100], 
-                                state="readonly", width=15)
+        ttk.Label(res_frame, text="FPS:").grid(row=0, column=2, sticky=tk.W, padx=(20,0))
+        fps_combo = ttk.Combobox(res_frame,
+                                 textvariable=self.fps_var,
+                                 values=[15, 30, 60, 100],
+                                 state="readonly",
+                                 width=15)
         fps_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        # Camera settings sliders
-        settings_frame = ttk.Frame(camera_tab)
-        settings_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-        
-        # Create settings sliders
-        settings_info = [
-            ("brightness", "Brightness", 0, 8),
-            ("contrast", "Contrast", 0, 8),
-            ("hue", "Hue", 0, 11),
-            ("saturation", "Saturation", 0, 8),
-            ("exposure", "Exposure", -1, 100, True),
-            ("gain", "Gain", -1, 100, True),
-            ("whitebalance", "White Balance", -1, 6500, True)
-        ]
+        # Sliders for brightness/contrast/hue/etc.
+        sliders_frame = ttk.Frame(camera_tab)
+        sliders_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         self.camera_setting_widgets = {}
         
-        for idx, setting in enumerate(settings_info):
-            if len(setting) == 4:
-                name, label, min_val, max_val = setting
-                auto_option = False
-            else:
-                name, label, min_val, max_val, auto_option = setting
-                
-            # Create setting frame
-            setting_frame = ttk.LabelFrame(settings_frame, text=label)
-            setting_frame.grid(row=idx // 2, column=idx % 2, padx=10, pady=5, sticky=tk.W+tk.E+tk.N+tk.S)
+        # (setting_key, label, min, max, is_auto_capable)
+        camera_settings_info = [
+            ("brightness",   "Brightness",   0, 8,   False),
+            ("contrast",     "Contrast",     0, 8,   False),
+            ("hue",          "Hue",          0, 11,  False),
+            ("saturation",   "Saturation",   0, 8,   False),
+            ("exposure",     "Exposure",     0, 100, True),
+            ("gain",         "Gain",         0, 100, True),
+            ("whitebalance", "WhiteBalance", 0, 6500,True),
+        ]
+        
+        for idx, (key, label, minval, maxval, auto_opt) in enumerate(camera_settings_info):
+            lf = ttk.LabelFrame(sliders_frame, text=label)
+            lf.grid(row=idx//2, column=idx%2, padx=10, pady=5, sticky=tk.W+tk.E)
             
-            # Auto checkbox if applicable
-            if auto_option:
-                auto_check = ttk.Checkbutton(setting_frame, text="Auto", 
-                                          variable=self.camera_settings_vars[name]["auto"],
-                                          command=lambda n=name: self.on_auto_checkbox_changed(n))
-                auto_check.pack(anchor=tk.W, padx=5, pady=2)
-                
-            # Create scale
-            scale = ttk.Scale(setting_frame, from_=min_val if not auto_option else min_val + 1, 
-                            to=max_val, orient=tk.HORIZONTAL, 
-                            variable=self.camera_settings_vars[name]["value"],
-                            command=lambda val, n=name: self.on_scale_value_changed(n, val))
+            auto_chk = None
+            if auto_opt:
+                # "Auto" checkbox
+                auto_chk = ttk.Checkbutton(lf,
+                                           text="Auto",
+                                           variable=self.camera_settings_vars[key]["auto"],
+                                           command=lambda k=key: self.on_auto_checkbox_changed(k))
+                auto_chk.pack(anchor=tk.W, padx=5, pady=2)
+            
+            scale = ttk.Scale(lf,
+                              from_=minval,
+                              to=maxval,
+                              orient=tk.HORIZONTAL,
+                              variable=self.camera_settings_vars[key]["value"],
+                              command=lambda val, k=key: self.on_scale_value_changed(k, val))
             scale.pack(fill=tk.X, padx=5, pady=5)
             
-            # Value label
-            value_label = ttk.Label(setting_frame, text=str(self.camera_settings_vars[name]["value"].get()))
-            value_label.pack(anchor=tk.E, padx=5, pady=2)
+            val_label = ttk.Label(lf, text=str(self.camera_settings_vars[key]["value"].get()))
+            val_label.pack(anchor=tk.E, padx=5, pady=2)
             
-            # Store widgets
-            self.camera_setting_widgets[name] = {
+            self.camera_setting_widgets[key] = {
                 "scale": scale,
-                "label": value_label,
-                "auto": auto_check if auto_option else None
+                "label": val_label,
+                "auto": auto_chk
             }
             
-            # Disable scale if auto is checked
-            if auto_option and self.camera_settings_vars[name]["auto"].get():
+            # If auto is on, disable the slider
+            if auto_opt and self.camera_settings_vars[key]["auto"].get():
                 scale.state(['disabled'])
         
-        # Camera connect buttons
+        # Connect/Disconnect camera from this tab
         cam_button_frame = ttk.Frame(camera_tab)
         cam_button_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        self.connect_camera_button = ttk.Button(cam_button_frame, text="Connect Camera", 
-                                              command=self.on_connect_camera_clicked)
+        self.connect_camera_button = ttk.Button(cam_button_frame, text="Connect Camera",
+                                                command=self.on_connect_camera_clicked)
         self.connect_camera_button.pack(side=tk.LEFT, padx=5)
         
-        self.disconnect_camera_button = ttk.Button(cam_button_frame, text="Disconnect Camera", 
-                                                 command=self.on_disconnect_camera_clicked)
+        self.disconnect_camera_button = ttk.Button(cam_button_frame, text="Disconnect Camera",
+                                                   command=self.on_disconnect_camera_clicked)
         self.disconnect_camera_button.pack(side=tk.LEFT, padx=5)
         self.disconnect_camera_button.state(['disabled'])
         
-        # GPS settings tab
+        # GPS sub-tab
         gps_tab = ttk.Frame(settings_notebook)
-        settings_notebook.add(gps_tab, text="GPS") 
+        settings_notebook.add(gps_tab, text="GPS")
         
-        # GPS device selection
-        device_frame = ttk.Frame(gps_tab)
-        device_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
-    
-        # Create variable for GPS device selection
-        self.gps_device_var = StringVar(value="default")  # Default to "default" device
-        
-        # Get available devices from settings
-        available_devices = list(self.settings["gps"]["devices"].keys())
-        
-        device_combo = ttk.Combobox(device_frame, textvariable=self.gps_device_var, 
-                                values=available_devices, state="readonly", width=15)
-        device_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
-        device_combo.bind("<<ComboboxSelected>>", self.on_gps_device_changed)
+        # Just a minimal note: you can keep it blank if you prefer the full GPS panel in the “GPS Monitor” tab.
 
-        # GPS port and other settings
-        port_frame = ttk.Frame(gps_tab)
-        port_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
-        
-        # Initialize with default device port
-        default_port = self.settings["gps"]["devices"]["default"]["port"]
-        self.gps_port_var = StringVar(value=default_port)
-        
-        port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
-        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
-        
-        ttk.Label(port_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
-        
-        # Initialize with default device baud rate
-        default_baud = self.settings["gps"]["devices"]["default"]["baud_rate"]
-        self.gps_baud_var = IntVar(value=default_baud)
-        
-        baud_combo = ttk.Combobox(port_frame, textvariable=self.gps_baud_var, 
-                                values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                state="readonly", width=10)
-        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
-        
-        # GPS connect buttons
-        gps_button_frame = ttk.Frame(gps_tab)
-        gps_button_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.connect_gps_button = ttk.Button(gps_button_frame, text="Connect GPS", 
-                                           command=self.on_connect_gps_clicked)
-        self.connect_gps_button.pack(side=tk.LEFT, padx=5)
-        
-        self.disconnect_gps_button = ttk.Button(gps_button_frame, text="Disconnect GPS", 
-                                              command=self.on_disconnect_gps_clicked)
-        self.disconnect_gps_button.pack(side=tk.LEFT, padx=5)
-        self.disconnect_gps_button.state(['disabled'])
-        
-        # Save button
+        # Save settings button
         save_frame = ttk.Frame(self.settings_tab)
         save_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        save_button = ttk.Button(save_frame, text="Save Settings", 
-                               command=self.on_save_settings_clicked)
-        save_button.pack(side=tk.RIGHT, padx=5)
-        
+        save_btn = ttk.Button(save_frame, text="Save Settings",
+                              command=self.on_save_settings_clicked)
+        save_btn.pack(side=tk.RIGHT, padx=5)
+
+    # ----------------- Device Connection on Startup -----------------
+    
     def connect_devices(self):
-        """Connect to camera and GPS devices on startup"""
-        # Try to connect to camera
+        """Try connecting camera and GPS automatically at startup."""
         if self.on_connect_camera_clicked():
-            self.logger.info("Successfully connected to ZED camera on startup")
-            
-        # Try to connect to GPS
+            self.logger.info("Successfully connected to ZED camera on startup.")
         if self.on_connect_gps_clicked():
-            self.logger.info("Successfully connected to GPS on startup")
-            
+            self.logger.info("Successfully connected to GPS on startup.")
+
+    # ----------------- UI Updater -----------------
+    
     def update_ui(self):
-        """Update UI with current status (called by timer)"""
+        """Periodic UI refresh for statuses, every ~500ms."""
         try:
-            # Update camera status
+            # Camera status
             if self.camera.is_connected:
                 self.camera_status_label.config(text="Camera: Connected")
                 self.connect_camera_button.state(['disabled'])
@@ -478,7 +563,7 @@ class MainWindow:
                 self.start_button.state(['!disabled'])
                 self.single_capture_button.state(['!disabled'])
                 
-                # Enable video recording buttons
+                # Video
                 if hasattr(self, 'start_record_button'):
                     if not hasattr(self, 'video_recorder') or not self.video_recorder.is_recording:
                         self.start_record_button.state(['!disabled'])
@@ -491,29 +576,30 @@ class MainWindow:
                 self.start_button.state(['disabled'])
                 self.single_capture_button.state(['disabled'])
                 
-                # Disable video recording buttons
                 if hasattr(self, 'start_record_button'):
                     self.start_record_button.state(['disabled'])
-                    
-            # Update GPS status
+            
+            # GPS status
             if self.gps.is_connected:
                 gps_data = self.gps.get_current_data()
                 fix_status = "Fix" if self.gps.has_fix() else "No Fix"
                 sats = gps_data["satellites"] if gps_data["satellites"] else "?"
                 
                 self.gps_status_label.config(text=f"GPS: Connected ({fix_status}, Sats: {sats})")
-                self.connect_gps_button.state(['disabled'])
-                self.disconnect_gps_button.state(['!disabled'])
+                self.gps_connect_button.state(['disabled'])
+                self.gps_disconnect_button.state(['!disabled'])
+                self.gps_test_button.state(['!disabled'])
+                
             else:
                 self.gps_status_label.config(text="GPS: Disconnected")
-                self.connect_gps_button.state(['!disabled'])
-                self.disconnect_gps_button.state(['disabled'])
-                
-            # Update capture status if controller exists
+                self.gps_connect_button.state(['!disabled'])
+                self.gps_disconnect_button.state(['disabled'])
+                self.gps_test_button.state(['disabled'])
+            
+            # If capture is running
             if self.capture_controller:
                 if self.capture_controller.is_capturing:
                     stats = self.capture_controller.get_capture_stats()
-                    
                     self.capture_status_label.config(text=f"Capture: Active ({stats['mode']} mode)")
                     self.capture_count_label.config(text=f"Images: {stats['capture_count']}")
                     
@@ -531,78 +617,30 @@ class MainWindow:
                         self.single_capture_button.state(['disabled'])
                         
                     self.stop_button.state(['disabled'])
-                    
-            # Update video recording status
+            
+            # Video status
             if hasattr(self, 'video_recorder'):
                 if self.video_recorder.is_recording:
                     status = self.video_recorder.get_recording_status()
-                    duration = status["duration"]
-                    file_path = status["file_path"]
+                    self.recording_status_label.config(text="Recording")
+                    self.recording_duration_label.config(text=f"{status['duration']:.1f} seconds")
                     
-                    if hasattr(self, 'recording_status_label'):
-                        self.recording_status_label.config(text="Recording")
-                        self.recording_duration_label.config(text=f"{duration:.1f} seconds")
-                        
-                        if file_path:
-                            self.recording_file_label.config(text=os.path.basename(file_path))
-                            
-                    # Update button states
+                    if status["file_path"]:
+                        self.recording_file_label.config(text=os.path.basename(status["file_path"]))
+                    
                     if hasattr(self, 'start_record_button'):
                         self.start_record_button.state(['disabled'])
                         self.stop_record_button.state(['!disabled'])
-                        
+                    
         except Exception as e:
             self.logger.error(f"Error updating UI: {e}")
-            
-        # Schedule the next update
+        
         self.root.after(500, self.update_ui)
-        
-    def update_settings_from_ui(self):
-        """Update settings dictionary from UI values"""
-        # Capture settings
-        self.settings["capture_mode"] = self.capture_mode_var.get()
-        self.settings["time_interval"] = self.time_interval_var.get()
-        self.settings["gps_interval"] = self.gps_interval_var.get()
-        self.settings["output_directory"] = self.output_dir_var.get()
-        
-        # Add view type settings
-        if "view_types" not in self.settings:
-            self.settings["view_types"] = {}
-            
-        if hasattr(self, 'view_vars'):
-            for view_name, var in self.view_vars.items():
-                self.settings["view_types"][view_name] = var.get()
-            
-        # Camera settings
-        self.settings["camera"]["mode"] = self.camera_mode_var.get()
-        self.settings["camera"]["resolution"] = self.resolution_var.get()
-        self.settings["camera"]["fps"] = self.fps_var.get()
-        
-        # Camera parameters
-        for name, vars_dict in self.camera_settings_vars.items():
-            if "auto" in vars_dict and vars_dict["auto"].get():
-                self.settings["camera"][name] = -1  # Auto mode
-            else:
-                self.settings["camera"][name] = vars_dict["value"].get()
-                
-        # GPS settings
-        if "active_device" not in self.settings["gps"]:
-            self.settings["gps"]["active_device"] = "default"
-            
-        # Update active device from UI selection
-        if hasattr(self, 'gps_device_var'):
-            self.settings["gps"]["active_device"] = self.gps_device_var.get()
-            
-        # Update device settings for the active device
-        active_device = self.settings["gps"]["active_device"]
-        if active_device in self.settings["gps"]["devices"]:
-            self.settings["gps"]["devices"][active_device]["port"] = self.gps_port_var.get()
-            self.settings["gps"]["devices"][active_device]["baud_rate"] = self.gps_baud_var.get()
-        
-        return self.settings
-        
+
+    # ----------------- Camera Connect/Disconnect -----------------
+    
     def on_connect_camera_clicked(self):
-        """Connect to ZED camera"""
+        """Connect to the ZED camera using current settings."""
         settings = self.update_settings_from_ui()
         
         self.root.title("ZED Camera Capture Tool - Connecting to camera...")
@@ -610,208 +648,378 @@ class MainWindow:
         
         success = self.camera.connect(settings)
         
+        self.root.title("ZED Camera Capture Tool")
         if success:
-            self.root.title("ZED Camera Capture Tool")
-            
-            # Initialize capture controller if not already
             if not self.capture_controller:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
             
-            # Update UI for available view types
+            # Show available view types in the UI
             self.update_view_ui_for_available_types()
-                
-            # Start preview updates
+            # Start the live preview
             self.update_preview()
-                
+            
             return True
         else:
-            self.root.title("ZED Camera Capture Tool")
-            messagebox.showerror("Connection Error", 
-                                "Failed to connect to ZED camera. Please check connections and settings.")
+            messagebox.showerror("Connection Error",
+                                 "Failed to connect to ZED camera.\nCheck connections and settings.")
             return False
-            
+
     def on_disconnect_camera_clicked(self):
-        """Disconnect from ZED camera"""
-        # Stop capture if running
+        """Disconnect the camera."""
         if self.capture_controller and self.capture_controller.is_capturing:
             self.capture_controller.stop_capture()
-
-        # Remove preview image if it exists
-        if hasattr(self, 'photo_image'):
-            self.preview_label.config(image=None)
-            self.photo_image = None
-            
+        
+        # Clear any displayed preview
+        if "rgb" in self.preview_labels:
+            self.preview_labels["rgb"].config(image=None, text="No RGB preview")
+        if "depth" in self.preview_labels:
+            self.preview_labels["depth"].config(image=None, text="No depth preview")
+        if "disparity" in self.preview_labels:
+            self.preview_labels["disparity"].config(image=None, text="No additional view")
+        
         self.camera.disconnect()
 
+    # ----------------- GPS Connect/Disconnect -----------------
+    
     def on_connect_gps_clicked(self):
-        """Connect to GPS receiver from GPS tab"""
+        """Connect to GPS using current settings."""
         settings = self.update_settings_from_ui()
         
         self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
         self.root.update()
         
-        # Update UI immediately to show trying to connect
-        self.gps_status_labels["gps_connection_status"].config(text="Connecting...")
-        self.gps_status_labels["gps_connection_status"].config(foreground="orange")
-        self.root.update()
+        # Show status in the detailed label
+        self.gps_status_labels["gps_connection_status"].config(text="Connecting...", foreground="orange")
         
-        # Enable verbose logging for connection
+        # Temporarily set debug to see GPS parse logs
         old_level = logging.getLogger("GPSReceiver").level
         logging.getLogger("GPSReceiver").setLevel(logging.DEBUG)
         
-        # Connect to GPS
         success = self.gps.connect(settings)
         
-        # Reset logging level
+        # Restore logging level
         logging.getLogger("GPSReceiver").setLevel(old_level)
         
+        self.root.title("ZED Camera Capture Tool")
         if success:
-            self.root.title("ZED Camera Capture Tool")
-            
-            # Initialize capture controller if not already and camera is connected
+            self.gps_status_labels["gps_connection_status"].config(text="Connected", foreground="green")
             if not self.capture_controller and self.camera.is_connected:
                 self.capture_controller = CaptureController(self.camera, self.gps, settings)
-                
-            # Update GPS status labels
-            self.gps_status_labels["gps_connection_status"].config(text="Connected")
-            self.gps_status_labels["gps_connection_status"].config(foreground="green")
-            
-            # Update UI
-            self.gps_connect_button.state(['disabled'])
-            self.gps_disconnect_button.state(['!disabled'])
-            self.gps_test_button.state(['!disabled'])
-            
-            # Start GPS monitoring
-            self.start_gps_monitoring()
             
             return True
         else:
-            self.root.title("ZED Camera Capture Tool")
-            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed")
-            self.gps_status_labels["gps_connection_status"].config(foreground="red")
-            
-            # Get the selected device name for better error message
-            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
-            port = settings["gps"]["devices"][active_device]["port"]
-            
-            messagebox.showerror("Connection Error", 
-                            f"Failed to connect to GPS device '{active_device}' on {port}. "
-                            "Please check connections and port settings.")
+            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed", foreground="red")
+            messagebox.showerror("Connection Error",
+                                 f"Failed to connect to GPS on port {settings['gps']['port']}.")
             return False
-
+    
     def on_disconnect_gps_clicked(self):
-        """Disconnect from GPS receiver"""
-        # Stop capture if running in GPS mode
-        if (self.capture_controller and 
-            self.capture_controller.is_capturing and 
+        """Disconnect from the GPS device."""
+        if (self.capture_controller and
+            self.capture_controller.is_capturing and
             self.settings["capture_mode"] == "gps"):
             self.capture_controller.stop_capture()
-            
+        
         self.gps.disconnect()
         
+        self.gps_status_labels["gps_connection_status"].config(text="Disconnected", foreground="")
+        for key in ["gps_fix_type", "gps_satellites", "gps_latitude", "gps_longitude",
+                    "gps_altitude", "gps_speed", "gps_time"]:
+            self.gps_status_labels[key].config(text="N/A")
+    
+    def on_test_gps_clicked(self):
+        """Manually read a few lines from the GPS and display them."""
+        if not self.gps.is_connected:
+            messagebox.showerror("Error", "GPS not connected")
+            return
+        
+        self.nmea_text.insert(tk.END, "--- Testing GPS Connection ---\n")
+        self.nmea_text.see(tk.END)
+        
+        # We attempt to read e.g. 10 lines or until 5 seconds passes
+        count = 0
+        end_time = time.time() + 5
+        while time.time() < end_time and count < 10:
+            if self.gps.serial_port and self.gps.serial_port.in_waiting:
+                line = (self.gps.serial_port.readline()
+                                    .decode('ascii', errors='replace')
+                                    .strip())
+                if line:
+                    self.nmea_text.insert(tk.END, line + "\n")
+                    self.nmea_text.see(tk.END)
+                    count += 1
+            time.sleep(0.1)
+        
+        if count == 0:
+            self.nmea_text.insert(tk.END, "No data received.\n")
+        
+        self.nmea_text.insert(tk.END, "--- Test Complete ---\n\n")
+        self.nmea_text.see(tk.END)
+
+    # ----------------- Capture (Time/GPS/Single) -----------------
+    
     def on_start_capture_clicked(self):
-        """Start capture process"""
+        """Start auto-capturing according to time or GPS distance."""
         if not self.camera.is_connected:
             messagebox.showerror("Error", "Camera not connected")
             return
-            
-        if self.settings["capture_mode"] == "gps" and not self.gps.is_connected:
-            messagebox.showerror("Error", "GPS not connected. Required for GPS-based capture.")
-            return
-            
-        # Update settings from UI
-        settings = self.update_settings_from_ui()
         
-        # Start capture
-        if self.capture_controller.start_capture(settings):
+        if self.capture_mode_var.get() == "gps" and not self.gps.is_connected:
+            messagebox.showerror("Error", "GPS not connected (required for GPS mode).")
+            return
+        
+        settings = self.update_settings_from_ui()
+        if not self.capture_controller:
+            self.capture_controller = CaptureController(self.camera, self.gps, settings)
+        
+        success = self.capture_controller.start_capture(settings)
+        if success:
             self.root.title(f"ZED Camera Capture Tool - Capturing ({settings['capture_mode']} mode)")
         else:
             messagebox.showerror("Error", "Failed to start capture")
-            
+
     def on_stop_capture_clicked(self):
-        """Stop capture process"""
         if self.capture_controller:
             self.capture_controller.stop_capture()
             self.root.title("ZED Camera Capture Tool")
-            
+
     def on_single_capture_clicked(self):
-        """Capture a single image with all selected view types"""
+        """Grab one set of images right now."""
         if not self.camera.is_connected:
             messagebox.showerror("Error", "Camera not connected")
             return
-            
-        # Update settings from UI
-        settings = self.update_settings_from_ui()
         
-        # Initialize capture controller if not already
+        settings = self.update_settings_from_ui()
         if not self.capture_controller:
             self.capture_controller = CaptureController(self.camera, self.gps, settings)
-            
-        # Get selected view types to capture
-        view_types = self.get_selected_view_types()
         
+        view_types = self.get_selected_view_types()
         if not view_types:
             messagebox.showerror("Error", "No view types selected for capture")
             return
-            
-        # Capture images
+        
         output_dir = settings["output_directory"]
         success = self.capture_controller._capture_image(output_dir, view_types=view_types)
+        # The _capture_image is an internal method, so rely carefully. 
+        # In a production code, you'd expose a single-capture method more gracefully.
         
         if success:
             self.capture_count_label.config(text=f"Images: {self.capture_controller.capture_count}")
         else:
             messagebox.showerror("Error", "Failed to capture image")
-    
+
     def get_selected_view_types(self):
-        """Get list of selected view types to capture"""
-        view_types = []
+        """Return which views have been checkboxed by the user."""
+        result = []
+        for vtype, var in self.view_vars.items():
+            if var.get():
+                result.append(vtype)
+        # If none selected, default to rgb
+        if not result:
+            result = ["rgb"]
         
-        # Get all views that have their checkbox selected
-        if hasattr(self, 'view_vars'):
-            for view_name, var in self.view_vars.items():
-                if var.get():
-                    view_types.append(view_name)
-        
-        # If nothing is selected, default to RGB
-        if not view_types:
-            view_types = ["rgb"]
-            
-        # Make sure all selected types are actually available
+        # Filter out any that the ZED SDK does not actually support
         if self.camera.is_connected:
-            available_types = self.camera.get_available_view_types()
-            view_types = [vt for vt in view_types if vt in available_types]
-            
-        return view_types
+            available = self.camera.get_available_view_types()
+            result = [r for r in result if r in available]
+        
+        return result
+
+    def on_capture_mode_changed(self):
+        """Time vs GPS radio changed."""
+        self.settings["capture_mode"] = self.capture_mode_var.get()
 
     def on_browse_clicked(self):
-        """Open file dialog to select output directory"""
+        """Pick an output directory."""
         current_dir = self.output_dir_var.get()
-        
-        directory = filedialog.askdirectory(
-            initialdir=current_dir,
-            title="Select Output Directory"
-        )
-        
+        directory = filedialog.askdirectory(initialdir=current_dir,
+                                            title="Select Output Directory")
         if directory:
             self.output_dir_var.set(directory)
-            
-    def on_capture_mode_changed(self):
-        """Handle capture mode radio button changes"""
-        mode = self.capture_mode_var.get()
-        if mode == "time":
-            self.settings["capture_mode"] = "time"
-        else:
-            self.settings["capture_mode"] = "gps"
-                
-    def on_camera_mode_changed(self, event=None):
-        """Handle camera mode combobox changes"""
-        is_manual = (self.camera_mode_var.get() == "manual")
+
+    # ----------------- Preview -----------------
+    
+    def update_preview(self):
+        """Continuously fetch frames from the ZED and display them."""
+        if not self.camera.is_connected:
+            return
         
-        # Enable/disable manual sliders based on mode
+        try:
+            # Decide which views to request from the camera
+            # (At least "rgb", plus depth or disparity if available)
+            available = self.camera.get_available_view_types()
+            views_to_display = ["rgb"]
+            if "depth" in available:
+                views_to_display.append("depth")
+            # If "disparity" is not in the SDK, we might use "confidence" instead
+            if "disparity" in available:
+                views_to_display.append("disparity")
+            elif "confidence" in available:
+                views_to_display.append("confidence")
+            
+            frames = self.camera.get_current_frame(views_to_display)
+            if not frames:
+                return
+            
+            import numpy as np
+            
+            # We store references to ImageTk objects so they don't get GC'd
+            if not hasattr(self, 'photo_images'):
+                self.photo_images = {}
+            
+            w = self.preview_dimensions["width"]
+            h = self.preview_dimensions["height"]
+            
+            for vtype, img_data in frames.items():
+                if img_data is None:
+                    continue
+                if vtype not in self.preview_labels:
+                    continue
+                
+                # Convert from BGR to something displayable
+                if vtype == "rgb":
+                    image_rgb = cv2.cvtColor(img_data, cv2.COLOR_BGR2RGB)
+                elif vtype in ["depth", "disparity", "confidence"]:
+                    # Normalize for visualization
+                    normed = cv2.normalize(img_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                    colorized = cv2.applyColorMap(normed, cv2.COLORMAP_JET)
+                    image_rgb = cv2.cvtColor(colorized, cv2.COLOR_BGR2RGB)
+                else:
+                    # Fallback
+                    image_rgb = cv2.cvtColor(img_data, cv2.COLOR_BGR2RGB)
+                
+                resized = cv2.resize(image_rgb, (w, h))
+                pil_img = Image.fromarray(resized)
+                self.photo_images[vtype] = ImageTk.PhotoImage(image=pil_img)
+                
+                # If we got "confidence" but the label is "disparity", map it
+                label_key = vtype
+                if vtype == "confidence" and "disparity" in self.preview_labels:
+                    label_key = "disparity"
+                
+                self.preview_labels[label_key].config(image=self.photo_images[vtype], text="")
+                
+        except Exception as e:
+            self.logger.error(f"Error updating preview: {e}")
+        
+        # Schedule next update
+        if self.camera.is_connected:
+            self.root.after(100, self.update_preview)
+
+    def update_view_ui_for_available_types(self):
+        """Reveal/hide the checkboxes for whichever view types are supported by the SDK."""
+        if not self.camera.is_connected:
+            return
+        available = self.camera.get_available_view_types()
+        
+        # Depth
+        if "depth" in available:
+            if "depth" in self.view_vars:
+                self.view_vars["depth"].set(True)  # or default to False as you like
+                self.view_checkbuttons["depth"].grid()
+        else:
+            if "depth" in self.view_checkbuttons:
+                self.view_checkbuttons["depth"].grid_remove()
+        
+        # Disparity or confidence
+        if "disparity" in available:
+            if "disparity" in self.view_vars:
+                self.view_vars["disparity"].set(False)
+                self.view_checkbuttons["disparity"].grid()
+        elif "confidence" in available:
+            if "confidence" in self.view_vars:
+                self.view_checkbuttons["confidence"].grid()
+        # else hide them
+
+    # ----------------- Video Recording -----------------
+    
+    def on_start_recording_clicked(self):
+        if not self.camera.is_connected:
+            messagebox.showerror("Error", "Camera not connected")
+            return
+        out_dir = self.output_dir_var.get()
+        codec = self.codec_var.get()
+        bitrate = self.bitrate_var.get()
+        
+        if not hasattr(self, 'video_recorder'):
+            self.video_recorder = VideoRecorder(self.camera)
+        
+        success = self.video_recorder.start_recording(output_dir=out_dir,
+                                                      codec=codec,
+                                                      bitrate=bitrate)
+        if success:
+            self.recording_status_label.config(text="Recording")
+            self.start_record_button.state(['disabled'])
+            self.stop_record_button.state(['!disabled'])
+            
+            # If you want to enforce a duration limit
+            duration_limit = self.duration_limit_var.get()
+            if duration_limit > 0:
+                self.root.after(duration_limit*1000, self.check_duration_limit)
+        else:
+            messagebox.showerror("Error", "Failed to start recording")
+
+    def on_stop_recording_clicked(self):
+        if not hasattr(self, 'video_recorder'):
+            return
+        if not self.video_recorder.is_recording:
+            return
+        
+        success, video_path, duration = self.video_recorder.stop_recording()
+        if success:
+            self.recording_status_label.config(text="Not recording")
+            self.recording_duration_label.config(text="0 seconds")
+            if video_path:
+                self.recording_file_label.config(text=os.path.basename(video_path))
+            self.start_record_button.state(['!disabled'])
+            self.stop_record_button.state(['disabled'])
+            
+            self.refresh_video_list()
+            
+            messagebox.showinfo("Recording Complete",
+                                f"Video saved to: {video_path}\nDuration: {duration:.1f} seconds")
+        else:
+            messagebox.showerror("Error", "Failed to stop recording")
+
+    def check_duration_limit(self):
+        """Stop the recording if we've hit the user-specified limit."""
+        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
+            limit = self.duration_limit_var.get()
+            status = self.video_recorder.get_recording_status()
+            if status["duration"] >= limit > 0:
+                self.logger.info(f"Recording reached duration limit {limit} sec. Stopping.")
+                self.on_stop_recording_clicked()
+
+    def refresh_video_list(self):
+        """Reload any .svo files in the output directory and display them."""
+        self.video_listbox.delete(0, tk.END)
+        out_dir = self.output_dir_var.get()
+        if not os.path.isdir(out_dir):
+            return
+        files = sorted(Path(out_dir).glob("*.svo"), reverse=True)
+        for f in files:
+            # If there's metadata (json) we can parse it
+            meta_file = f.with_suffix('.json')
+            display = f.name
+            if meta_file.exists():
+                try:
+                    with open(meta_file, 'r') as mf:
+                        md = json.load(mf)
+                    stime = md.get("start_time", "")
+                    dur = md.get("duration_seconds", 0)
+                    display = f"{f.name} - {stime} ({dur:.1f}s)"
+                except:
+                    pass
+            self.video_listbox.insert(tk.END, display)
+
+    # ----------------- Camera Settings Handling -----------------
+    
+    def on_camera_mode_changed(self, event=None):
+        """Switch between auto/manual mode for brightness/exposure/gain..."""
+        is_manual = (self.camera_mode_var.get() == "manual")
         for name, widgets in self.camera_setting_widgets.items():
-            # For settings with auto option
-            if widgets["auto"]:
+            if widgets["auto"] is not None:
+                # if manual, let user toggle "auto" or not
                 if is_manual:
                     widgets["auto"].state(['!disabled'])
                     if not self.camera_settings_vars[name]["auto"].get():
@@ -822,1045 +1030,90 @@ class MainWindow:
                     widgets["auto"].state(['disabled'])
                     widgets["scale"].state(['disabled'])
             else:
+                # For settings w/o auto
                 if is_manual:
                     widgets["scale"].state(['!disabled'])
                 else:
                     widgets["scale"].state(['disabled'])
-                
-        self.settings["camera"]["mode"] = "manual" if is_manual else "auto"
-        
-    def on_save_settings_clicked(self):
-        """Save current settings"""
-        settings = self.update_settings_from_ui()
-        
-        if save_settings(settings):
-            messagebox.showinfo("Success", "Settings saved successfully")
-        else:
-            messagebox.showerror("Error", "Failed to save settings")
-            
-    def on_scale_value_changed(self, name, value):
-        """Handle slider value changes"""
-        try:
-            # Convert from string to float to int
-            value = int(float(value))
-            self.camera_setting_widgets[name]["label"].config(text=str(value))
-            self.camera_settings_vars[name]["value"].set(value)
-        except Exception as e:
-            self.logger.error(f"Error updating scale value: {e}")
-        
+        self.settings["camera"]["mode"] = self.camera_mode_var.get()
+
     def on_auto_checkbox_changed(self, name):
-        """Handle auto checkbox changes"""
-        is_checked = self.camera_settings_vars[name]["auto"].get()
-        
-        # Enable/disable slider based on auto checkbox
-        if is_checked:
+        """If user toggles 'Auto' for e.g. exposure/gain, disable the slider."""
+        if self.camera_settings_vars[name]["auto"].get():
             self.camera_setting_widgets[name]["scale"].state(['disabled'])
-            self.settings["camera"][name] = -1  # -1 indicates auto mode
+            self.settings["camera"][name] = -1
         else:
             self.camera_setting_widgets[name]["scale"].state(['!disabled'])
             self.settings["camera"][name] = self.camera_settings_vars[name]["value"].get()
-            
-    def on_closing(self):
-        """Handle window close event"""
-        # Stop any active processes
-        if self.capture_controller and self.capture_controller.is_capturing:
-            self.capture_controller.stop_capture()
-            
-        # Disconnect devices
-        self.camera.disconnect()
-        self.gps.disconnect()
-        
-        # Save settings
-        self.update_settings_from_ui()
-        save_settings(self.settings)
-        
-        # Destroy window
-        self.root.destroy()
-    
-    def update_preview(self):
-        """Update the camera preview images for all views"""
-        if not self.camera.is_connected:
-            return
-            
+
+    def on_scale_value_changed(self, name, raw_value):
+        """Whenever the user moves a slider, update the label."""
         try:
-            # Get available view types from the camera
-            available_view_types = self.camera.get_available_view_types()
-            
-            # Define which views to display based on what's available
-            views_to_display = ["rgb"]
-            if "depth" in available_view_types:
-                views_to_display.append("depth")
-            if "disparity" in available_view_types:
-                views_to_display.append("disparity")
-            elif "confidence" in available_view_types:  # Use confidence as fallback if disparity not available
-                views_to_display.append("confidence")
-            
-            # Get frame data for available views
-            frame_data = self.camera.get_current_frame(views_to_display)
-            
-            if not frame_data:
-                return
-                
-            # Import numpy if needed for conversions
-            import numpy as np
-                
-            # Create a dictionary to store the PhotoImage objects to prevent garbage collection
-            if not hasattr(self, 'photo_images'):
-                self.photo_images = {}
-            
-            # Get preview dimensions from self (set in setup_capture_tab)
-            if hasattr(self, 'preview_dimensions'):
-                preview_width = self.preview_dimensions["width"]
-                preview_height = self.preview_dimensions["height"]
+            val = int(float(raw_value))
+            self.camera_setting_widgets[name]["label"].config(text=str(val))
+            self.camera_settings_vars[name]["value"].set(val)
+        except Exception as e:
+            self.logger.error(f"Error updating scale: {e}")
+
+    # ----------------- Settings Save/Load -----------------
+
+    def update_settings_from_ui(self):
+        """Pull the latest UI states into self.settings."""
+        self.settings["capture_mode"] = self.capture_mode_var.get()
+        self.settings["time_interval"] = self.time_interval_var.get()
+        self.settings["gps_interval"] = self.gps_interval_var.get()
+        self.settings["output_directory"] = self.output_dir_var.get()
+        
+        # Save which views are toggled
+        if "view_types" not in self.settings:
+            self.settings["view_types"] = {}
+        for vtype, var in self.view_vars.items():
+            self.settings["view_types"][vtype] = var.get()
+        
+        # Camera
+        self.settings["camera"]["mode"] = self.camera_mode_var.get()
+        self.settings["camera"]["resolution"] = self.resolution_var.get()
+        self.settings["camera"]["fps"] = self.fps_var.get()
+        
+        for name, vs in self.camera_settings_vars.items():
+            if vs["auto"].get():
+                self.settings["camera"][name] = -1
             else:
-                # Default to 640x480 if not set
-                preview_width = 320
-                preview_height = 240
-                
-            # Process each view
-            for view_name, image_data in frame_data.items():
-                if image_data is not None and view_name in self.preview_labels:
-                    # Convert image data based on view type
-                    if view_name == "rgb":
-                        # RGB image - convert from BGR to RGB
-                        image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
-                    elif view_name == "depth":
-                        # Depth image - normalize for better visualization
-                        # Scale to 0-255 for visibility
-                        depth_normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-                        # Apply colormap for better visualization
-                        image_rgb = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
-                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
-                    elif view_name == "disparity" or view_name == "confidence":
-                        # Normalize for better visualization
-                        normalized = cv2.normalize(image_data, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-                        # Apply colormap for better visualization
-                        image_rgb = cv2.applyColorMap(normalized, cv2.COLORMAP_JET)
-                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
-                    # elif view_name == "point_cloud":
-                    #     # Point cloud - create a simple 2D representation
-                    #     # This is just a placeholder - a proper 3D visualization would require more complex code
-                    #     try:
-                    #         point_cloud_img = image_data[:, :, 0:3]  # Take RGB part
-                    #         image_rgb = cv2.cvtColor(point_cloud_img.astype(np.uint8), cv2.COLOR_BGR2RGB)
-                    #     except Exception as e:
-                    #         self.logger.error(f"Error converting point cloud: {e}")
-                    #         continue
-                    else:
-                        # For any other view type, just convert to RGB
-                        image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
-                    
-                    # Resize to match the canvas size exactly
-                    image_resized = cv2.resize(image_rgb, (preview_width, preview_height))
-                    
-                    # Convert to PIL Image
-                    image_pil = Image.fromarray(image_resized)
-                    
-                    # Convert to PhotoImage for Tkinter
-                    self.photo_images[view_name] = ImageTk.PhotoImage(image=image_pil)
-                    
-                    # Map "confidence" view to "disparity" label if needed
-                    target_view = view_name
-                    if view_name == "confidence" and "disparity" in self.preview_labels and "confidence" not in self.preview_labels:
-                        target_view = "disparity"
-                    
-                    # Update label and place it centered on the canvas
-                    if target_view in self.preview_labels:
-                        self.preview_labels[target_view].config(image=self.photo_images[view_name], text="")
-                        self.preview_labels[target_view].place(x=preview_width//2, y=preview_height//2, anchor="center")
-                        
-        except Exception as e:
-            self.logger.error(f"Error updating preview: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            
-        # Schedule next update if still connected
-        if self.camera.is_connected:
-            self.root.after(100, self.update_preview)  # Update every 100ms
+                self.settings["camera"][name] = vs["value"].get()
+        
+        # GPS
+        self.settings["gps"]["port"] = self.gps_port_var.get()
+        # The BU-353N5's baud rate is fixed at 4800
+        self.settings["gps"]["baud_rate"] = 4800
+        
+        return self.settings
 
-    def setup_video_tab(self):
-        """Set up the video recording tab UI"""
-        
-        # Video control frame
-        control_frame = ttk.LabelFrame(self.video_tab, text="Video Recording")
-        control_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Output directory
-        dir_frame = ttk.Frame(control_frame)
-        dir_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        ttk.Label(dir_frame, text="Output directory:").grid(row=0, column=0, sticky=tk.W)
-        
-        # Reuse the same output directory from capture tab
-        dir_entry = ttk.Entry(dir_frame, textvariable=self.output_dir_var, width=50)
-        dir_entry.grid(row=0, column=1, padx=5, sticky=tk.W+tk.E)
-        
-        browse_button = ttk.Button(dir_frame, text="Browse...", command=self.on_browse_clicked)
-        browse_button.grid(row=0, column=2, padx=5)
-        
-        dir_frame.columnconfigure(1, weight=1)
-        
-        # Video settings
-        settings_frame = ttk.Frame(control_frame)
-        settings_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Codec selection
-        ttk.Label(settings_frame, text="Codec:").grid(row=0, column=0, sticky=tk.W)
-        
-        self.codec_var = StringVar(value="H264")
-        codec_combo = ttk.Combobox(settings_frame, textvariable=self.codec_var, 
-                                values=["H264", "H265"], state="readonly", width=10)
-        codec_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
-        
-        # Bitrate
-        ttk.Label(settings_frame, text="Bitrate (Kbps):").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
-        
-        self.bitrate_var = IntVar(value=8000)  # 8 Mbps default
-        bitrate_spin = ttk.Spinbox(settings_frame, from_=1000, to=50000, increment=1000,
-                                textvariable=self.bitrate_var, width=8)
-        bitrate_spin.grid(row=0, column=3, padx=5, sticky=tk.W)
-        
-        # Recording duration limit
-        ttk.Label(settings_frame, text="Duration limit (sec):").grid(row=1, column=0, sticky=tk.W, pady=(10, 0))
-        
-        self.duration_limit_var = IntVar(value=0)  # 0 means no limit
-        duration_spin = ttk.Spinbox(settings_frame, from_=0, to=3600, increment=10,
-                                textvariable=self.duration_limit_var, width=8)
-        duration_spin.grid(row=1, column=1, padx=5, sticky=tk.W, pady=(10, 0))
-        ttk.Label(settings_frame, text="(0 = no limit)").grid(row=1, column=2, sticky=tk.W, pady=(10, 0))
-        
-        # Record buttons
-        button_frame = ttk.Frame(control_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.start_record_button = ttk.Button(button_frame, text="Start Recording", 
-                                            command=self.on_start_recording_clicked)
-        self.start_record_button.pack(side=tk.LEFT, padx=5)
-        self.start_record_button.state(['disabled'])  # Disabled until camera is connected
-        
-        self.stop_record_button = ttk.Button(button_frame, text="Stop Recording", 
-                                        command=self.on_stop_recording_clicked)
-        self.stop_record_button.pack(side=tk.LEFT, padx=5)
-        self.stop_record_button.state(['disabled'])  # Disabled until recording starts
-        
-        # Recording status
-        status_frame = ttk.LabelFrame(self.video_tab, text="Recording Status")
-        status_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Status labels
-        status_grid = ttk.Frame(status_frame)
-        status_grid.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(status_grid, text="Status:").grid(row=0, column=0, sticky=tk.W, pady=2)
-        self.recording_status_label = ttk.Label(status_grid, text="Not recording")
-        self.recording_status_label.grid(row=0, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(status_grid, text="Duration:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.recording_duration_label = ttk.Label(status_grid, text="0 seconds")
-        self.recording_duration_label.grid(row=1, column=1, sticky=tk.W, pady=2)
-        
-        ttk.Label(status_grid, text="Output file:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.recording_file_label = ttk.Label(status_grid, text="None")
-        self.recording_file_label.grid(row=2, column=1, sticky=tk.W, pady=2)
-        
-        # Video file list
-        list_frame = ttk.LabelFrame(self.video_tab, text="Recorded Videos")
-        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Add a listbox with scrollbar
-        list_container = ttk.Frame(list_frame)
-        list_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        self.video_listbox = tk.Listbox(list_container)
-        self.video_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        
-        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.video_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.video_listbox.config(yscrollcommand=scrollbar.set)
-        
-        # Button to refresh video list
-        refresh_button = ttk.Button(list_frame, text="Refresh List", command=self.refresh_video_list)
-        refresh_button.pack(side=tk.LEFT, padx=5, pady=5)
-
-    # Add these methods to handle video recording functionality
-    def on_start_recording_clicked(self):
-        """Start video recording"""
-        if not self.camera.is_connected:
-            messagebox.showerror("Error", "Camera not connected")
-            return
-            
-        # Get output directory
-        output_dir = self.output_dir_var.get()
-        
-        # Get recording settings
-        codec = self.codec_var.get()
-        bitrate = self.bitrate_var.get()
-        
-        # Initialize video recorder if not already
-        if not hasattr(self, 'video_recorder'):
-            self.video_recorder = VideoRecorder(self.camera)
-        
-        # Start recording
-        success = self.video_recorder.start_recording(
-            output_dir=output_dir,
-            codec=codec,
-            bitrate=bitrate
-        )
-        
-        if success:
-            # Update UI
-            self.recording_status_label.config(text="Recording")
-            self.start_record_button.state(['disabled'])
-            self.stop_record_button.state(['!disabled'])
-            
-            # Start duration timer
-            self.recording_start_time = time.time()
-            self.update_recording_duration()
-            
-            # Set up duration limit if specified
-            duration_limit = self.duration_limit_var.get()
-            if duration_limit > 0:
-                self.root.after(duration_limit * 1000, self.check_duration_limit)
+    def on_save_settings_clicked(self):
+        """User pressed 'Save Settings'."""
+        s = self.update_settings_from_ui()
+        if save_settings(s):
+            messagebox.showinfo("Success", "Settings saved successfully.")
         else:
-            messagebox.showerror("Error", "Failed to start recording")
+            messagebox.showerror("Error", "Failed to save settings.")
 
-    def on_stop_recording_clicked(self):
-        """Stop video recording"""
-        if not hasattr(self, 'video_recorder') or not self.video_recorder.is_recording:
-            return
-            
-        # Stop recording
-        success, video_path, duration = self.video_recorder.stop_recording()
-        
-        if success:
-            # Update UI
-            self.recording_status_label.config(text="Not recording")
-            self.recording_duration_label.config(text="0 seconds")
-            self.recording_file_label.config(text=os.path.basename(video_path) if video_path else "None")
-            
-            self.start_record_button.state(['!disabled'])
-            self.stop_record_button.state(['disabled'])
-            
-            # Refresh video list
-            self.refresh_video_list()
-            
-            # Show success message
-            messagebox.showinfo("Recording Complete", 
-                            f"Video saved to:\n{video_path}\n\nDuration: {duration:.1f} seconds")
-        else:
-            messagebox.showerror("Error", "Failed to stop recording")
-
-    def update_recording_duration(self):
-        """Update the recording duration display"""
-        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
-            status = self.video_recorder.get_recording_status()
-            duration = status["duration"]
-            self.recording_duration_label.config(text=f"{duration:.1f} seconds")
-            
-            # Update file path
-            file_path = status["file_path"]
-            if file_path:
-                self.recording_file_label.config(text=os.path.basename(file_path))
-            
-            # Schedule next update
-            self.root.after(500, self.update_recording_duration)
-
-    def check_duration_limit(self):
-        """Check if recording duration limit has been reached"""
-        if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
-            duration_limit = self.duration_limit_var.get()
-            if duration_limit > 0:
-                status = self.video_recorder.get_recording_status()
-                if status["duration"] >= duration_limit:
-                    self.logger.info(f"Duration limit reached ({duration_limit} seconds). Stopping recording.")
-                    self.on_stop_recording_clicked()
-
-    def refresh_video_list(self):
-        """Refresh the list of recorded videos"""
-        try:
-            # Clear current list
-            self.video_listbox.delete(0, tk.END)
-            
-            # Get output directory
-            output_dir = self.output_dir_var.get()
-            print(f"Looking for videos in: {output_dir}")  # Debug print
-            
-            if not output_dir or not os.path.exists(output_dir):
-                print(f"Output directory doesn't exist: {output_dir}")  # Debug print
-                return
-                
-            # Find all SVO files in the directory
-            video_files = sorted(Path(output_dir).glob("*.svo"), reverse=True)
-            print(f"Found {len(list(video_files))} video files")  # Debug print
-            
-            for video_file in video_files:
-                # Try to get metadata
-                metadata_file = video_file.with_suffix('.json')
-                if metadata_file.exists():
-                    try:
-                        with open(metadata_file, 'r') as f:
-                            metadata = json.load(f)
-                            
-                        start_time = metadata.get("start_time", "Unknown")
-                        duration = metadata.get("duration_seconds", 0)
-                        
-                        # Format display string
-                        display = f"{video_file.name} - {start_time} ({duration:.1f}s)"
-                    except:
-                        display = f"{video_file.name}"
-                else:
-                    display = f"{video_file.name}"
-                    
-                self.video_listbox.insert(tk.END, display)
-        except Exception as e:
-            self.logger.error(f"Error refreshing video list: {e}")
-            print(f"Error refreshing video list: {e}")  # Debug print
-
-    # Update the on_closing method to handle video recording
+    # ----------------- Window Close -----------------
+    
     def on_closing(self):
-        """Handle window close event"""
-        # Stop recording if active
+        """When the user closes the window, stop everything cleanly."""
+        # If recording, stop
         if hasattr(self, 'video_recorder') and self.video_recorder.is_recording:
             self.video_recorder.stop_recording()
         
-        # Stop any active processes
+        # If capturing, stop
         if self.capture_controller and self.capture_controller.is_capturing:
             self.capture_controller.stop_capture()
-            
-        # Disconnect devices
+        
+        # Disconnect
         self.camera.disconnect()
         self.gps.disconnect()
         
-        # Save settings
+        # Save any changed settings
         self.update_settings_from_ui()
         save_settings(self.settings)
         
-        # Destroy window
         self.root.destroy()
-
-    def setup_gps_tab(self):
-        """Set up the GPS testing and monitoring tab"""
-        
-        # Main frame
-        main_frame = ttk.Frame(self.gps_tab)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # GPS Connection Frame
-        conn_frame = ttk.LabelFrame(main_frame, text="GPS Connection")
-        conn_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Port and baud rate
-        settings_frame = ttk.Frame(conn_frame)
-        settings_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttk.Label(settings_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
-        
-        # Default to ttyACM0 for your setup
-        self.gps_port_var.set("/dev/ttyACM0")
-        port_entry = ttk.Entry(settings_frame, textvariable=self.gps_port_var, width=20)
-        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
-        
-        ttk.Label(settings_frame, text="Baud Rate:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
-        
-        baud_combo = ttk.Combobox(settings_frame, textvariable=self.gps_baud_var, 
-                                values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                state="readonly", width=10)
-        baud_combo.grid(row=0, column=3, padx=5, sticky=tk.W)
-        
-        # Connect buttons
-        button_frame = ttk.Frame(conn_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.gps_connect_button = ttk.Button(button_frame, text="Connect GPS", 
-                                        command=self.on_gps_connect_clicked)
-        self.gps_connect_button.pack(side=tk.LEFT, padx=5)
-        
-        self.gps_disconnect_button = ttk.Button(button_frame, text="Disconnect GPS", 
-                                            command=self.on_gps_disconnect_clicked)
-        self.gps_disconnect_button.pack(side=tk.LEFT, padx=5)
-        self.gps_disconnect_button.state(['disabled'])
-        
-        self.gps_test_button = ttk.Button(button_frame, text="Test GPS Signal", 
-                                        command=self.on_test_gps_clicked)
-        self.gps_test_button.pack(side=tk.LEFT, padx=5)
-        self.gps_test_button.state(['disabled'])
-        
-        # GPS Status Frame
-        status_frame = ttk.LabelFrame(main_frame, text="GPS Status")
-        status_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Status grid - show key GPS data
-        self.gps_status_grid = ttk.Frame(status_frame)
-        self.gps_status_grid.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Create status labels
-        status_labels = [
-            ("Connection Status:", "Not Connected", "gps_connection_status"),
-            ("Fix Type:", "No Fix", "gps_fix_type"),
-            ("Satellites:", "0", "gps_satellites"),
-            ("Latitude:", "N/A", "gps_latitude"),
-            ("Longitude:", "N/A", "gps_longitude"),
-            ("Altitude:", "N/A", "gps_altitude"),
-            ("Speed:", "N/A", "gps_speed"),
-            ("Time:", "N/A", "gps_time")
-        ]
-        
-        self.gps_status_labels = {}
-        
-        for i, (label_text, default_value, variable_name) in enumerate(status_labels):
-            ttk.Label(self.gps_status_grid, text=label_text).grid(row=i, column=0, sticky=tk.W, pady=2)
-            label = ttk.Label(self.gps_status_grid, text=default_value)
-            label.grid(row=i, column=1, sticky=tk.W, pady=2, padx=5)
-            self.gps_status_labels[variable_name] = label
-        
-        # Raw NMEA data display
-        nmea_frame = ttk.LabelFrame(main_frame, text="Raw NMEA Data")
-        nmea_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Text widget with scrollbar for NMEA sentences
-        self.nmea_text = tk.Text(nmea_frame, height=8, width=80, wrap=tk.WORD)
-        self.nmea_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        scrollbar = ttk.Scrollbar(nmea_frame, orient="vertical", command=self.nmea_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.nmea_text.config(yscrollcommand=scrollbar.set)
-        
-        # Button to clear NMEA log
-        clear_button = ttk.Button(nmea_frame, text="Clear Log", 
-                                command=lambda: self.nmea_text.delete(1.0, tk.END))
-        clear_button.pack(pady=5)
-
-        # Live GPS Data Display
-        live_data_frame = ttk.Frame(status_frame)
-        live_data_frame.pack(fill=tk.X, padx=10, pady=5)
-        self.live_gps_label = ttk.Label(live_data_frame, text="Live GPS Data: N/A")
-        self.live_gps_label.pack(side=tk.LEFT)
-
-        # Add device management buttons
-        mgmt_frame = ttk.Frame(self.gps_tab)
-        mgmt_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        add_button = ttk.Button(mgmt_frame, text="Add Device", 
-                            command=self.on_add_gps_device)
-        add_button.pack(side=tk.LEFT, padx=5)
-        
-        edit_button = ttk.Button(mgmt_frame, text="Edit Device", 
-                                command=self.on_edit_gps_device)
-        edit_button.pack(side=tk.LEFT, padx=5)
-        
-        remove_button = ttk.Button(mgmt_frame, text="Remove Device", 
-                                command=self.on_remove_gps_device)
-        remove_button.pack(side=tk.LEFT, padx=5)
-
-    def on_gps_connect_clicked(self):
-        """Connect to GPS receiver from GPS tab"""
-        settings = self.update_settings_from_ui()
-        
-        self.root.title("ZED Camera Capture Tool - Connecting to GPS...")
-        self.root.update()
-        
-        # Update UI immediately to show trying to connect
-        self.gps_status_labels["gps_connection_status"].config(text="Connecting...")
-        self.gps_status_labels["gps_connection_status"].config(foreground="orange")
-        self.root.update()
-        
-        # Enable verbose logging for connection
-        old_level = logging.getLogger("GPSReceiver").level
-        logging.getLogger("GPSReceiver").setLevel(logging.DEBUG)
-        
-        # Connect to GPS
-        success = self.gps.connect(settings)
-        
-        # Reset logging level
-        logging.getLogger("GPSReceiver").setLevel(old_level)
-        
-        if success:
-            self.root.title("ZED Camera Capture Tool")
-            
-            # Initialize capture controller if not already and camera is connected
-            if not self.capture_controller and self.camera.is_connected:
-                self.capture_controller = CaptureController(self.camera, self.gps, settings)
-                
-            # Update GPS status labels
-            self.gps_status_labels["gps_connection_status"].config(text="Connected")
-            self.gps_status_labels["gps_connection_status"].config(foreground="green")
-            
-            # Update UI
-            self.gps_connect_button.state(['disabled'])
-            self.gps_disconnect_button.state(['!disabled'])
-            self.gps_test_button.state(['!disabled'])
-            
-            # Start GPS monitoring
-            self.start_gps_monitoring()
-            
-            return True
-        else:
-            self.root.title("ZED Camera Capture Tool")
-            self.gps_status_labels["gps_connection_status"].config(text="Connection Failed")
-            self.gps_status_labels["gps_connection_status"].config(foreground="red")
-            
-            messagebox.showerror("Connection Error", 
-                            "Failed to connect to GPS on " + settings["gps"]["port"] + 
-                            ". Please check connections and port settings.")
-            return False
-
-    def on_gps_disconnect_clicked(self):
-        """Disconnect from GPS receiver from GPS tab"""
-        # Stop capture if running in GPS mode
-        if (self.capture_controller and 
-            self.capture_controller.is_capturing and 
-            self.settings["capture_mode"] == "gps"):
-            self.capture_controller.stop_capture()
-            
-        # Stop GPS monitoring
-        self.stop_gps_monitoring()
-        
-        # Disconnect GPS
-        self.gps.disconnect()
-        
-        # Update GPS status labels
-        self.gps_status_labels["gps_connection_status"].config(text="Disconnected")
-        self.gps_status_labels["gps_connection_status"].config(foreground="")
-        
-        # Reset other status labels
-        for key in ["gps_fix_type", "gps_satellites", "gps_latitude", "gps_longitude", 
-                "gps_altitude", "gps_speed", "gps_time"]:
-            self.gps_status_labels[key].config(text="N/A")
-        
-        # Update UI
-        self.gps_connect_button.state(['!disabled'])
-        self.gps_disconnect_button.state(['disabled'])
-        self.gps_test_button.state(['disabled'])
-
-    def on_test_gps_clicked(self):
-        """Test GPS connection and show detailed information"""
-        if not self.gps.is_connected:
-            messagebox.showerror("Error", "GPS not connected")
-            return
-            
-        # Read several NMEA sentences
-        try:
-            raw_data = []
-            if self.gps.serial_port and self.gps.serial_port.is_open:
-                self.nmea_text.insert(tk.END, "--- Testing GPS Connection ---\n")
-                
-                timeout = time.time() + 5  # 5 second timeout
-                while time.time() < timeout and len(raw_data) < 10:
-                    if self.gps.serial_port.in_waiting:
-                        line = self.gps.serial_port.readline().decode('ascii', errors='replace').strip()
-                        if line:
-                            raw_data.append(line)
-                            self.nmea_text.insert(tk.END, line + "\n")
-                            self.nmea_text.see(tk.END)
-                            self.root.update()
-                    time.sleep(0.1)
-                    
-                if not raw_data:
-                    self.nmea_text.insert(tk.END, "No data received from GPS. Check connections.\n")
-                else:
-                    self.nmea_text.insert(tk.END, f"Received {len(raw_data)} NMEA sentences.\n")
-                    
-                self.nmea_text.insert(tk.END, "--- Test Complete ---\n\n")
-                self.nmea_text.see(tk.END)
-        except Exception as e:
-            self.nmea_text.insert(tk.END, f"Error testing GPS: {e}\n")
-            self.logger.error(f"Error testing GPS: {e}")
-
-    def start_gps_monitoring(self):
-        """Start monitoring GPS data updates"""
-        if not hasattr(self, 'gps_monitor_running'):
-            self.gps_monitor_running = True
-            self.update_gps_status()
-            
-    def stop_gps_monitoring(self):
-        """Stop GPS monitoring"""
-        self.gps_monitor_running = False
-        
-    def update_gps_status(self):
-        """Update GPS status display with latest data"""
-        if not self.gps_monitor_running:
-            return
-            
-        if self.gps.is_connected:
-            try:
-                # Get current GPS data
-                gps_data = self.gps.get_current_data()
-                
-                # Update fix type
-                if self.gps.has_fix():
-                    fix_type = "3D Fix" if gps_data["altitude"] is not None else "2D Fix"
-                    self.gps_status_labels["gps_fix_type"].config(text=fix_type)
-                    self.gps_status_labels["gps_fix_type"].config(foreground="green")
-                else:
-                    self.gps_status_labels["gps_fix_type"].config(text="No Fix")
-                    self.gps_status_labels["gps_fix_type"].config(foreground="red")
-                    
-                # Update satellite count
-                sat_count = gps_data["satellites"] if gps_data["satellites"] is not None else "0"
-                self.gps_status_labels["gps_satellites"].config(text=str(sat_count))
-                
-                # Update coordinates if available
-                if gps_data["latitude"] is not None and gps_data["longitude"] is not None:
-                    lat = f"{gps_data['latitude']:.6f}° N" if gps_data['latitude'] >= 0 else f"{-gps_data['latitude']:.6f}° S"
-                    lon = f"{gps_data['longitude']:.6f}° E" if gps_data['longitude'] >= 0 else f"{-gps_data['longitude']:.6f}° W"
-                    
-                    self.gps_status_labels["gps_latitude"].config(text=lat)
-                    self.gps_status_labels["gps_longitude"].config(text=lon)
-                else:
-                    self.gps_status_labels["gps_latitude"].config(text="N/A")
-                    self.gps_status_labels["gps_longitude"].config(text="N/A")
-                    
-                # Update altitude if available
-                if gps_data["altitude"] is not None:
-                    self.gps_status_labels["gps_altitude"].config(text=f"{gps_data['altitude']:.1f} m")
-                else:
-                    self.gps_status_labels["gps_altitude"].config(text="N/A")
-                    
-                # Update speed if available
-                if gps_data["speed"] is not None:
-                    self.gps_status_labels["gps_speed"].config(text=f"{gps_data['speed']:.1f} km/h")
-                else:
-                    self.gps_status_labels["gps_speed"].config(text="N/A")
-                    
-                # Update time if available
-                if gps_data["timestamp"] is not None:
-                    self.gps_status_labels["gps_time"].config(text=gps_data["timestamp"])
-                else:
-                    self.gps_status_labels["gps_time"].config(text="N/A")
-                    
-                # Add NMEA data if new data is available
-                if hasattr(self.gps, 'last_raw_nmea') and self.gps.last_raw_nmea:
-                    self.nmea_text.insert(tk.END, self.gps.last_raw_nmea + "\n")
-                    self.nmea_text.see(tk.END)
-                    
-                    # Keep text widget from growing too large
-                    if float(self.nmea_text.index('end-1c').split('.')[0]) > 100:
-                        self.nmea_text.delete(1.0, "end-100c")
-                        
-            except Exception as e:
-                self.logger.error(f"Error updating GPS status: {e}")
-                
-        # Schedule next update
-        if self.gps_monitor_running:
-            self.root.after(1000, self.update_gps_status)  # Update every second
-
-        # Update live GPS data label
-        gps_data = self.gps.get_current_data()
-        live_text = (
-            f"Lat: {gps_data.get('latitude', 'N/A')}, "
-            f"Lon: {gps_data.get('longitude', 'N/A')}, "
-            f"Alt: {gps_data.get('altitude', 'N/A')} m, "
-            f"Speed: {gps_data.get('speed', 'N/A')} km/h"
-        )
-        self.live_gps_label.config(text=live_text)
-
-    def update_view_ui_for_available_types(self):
-        """Update the UI to show only available view types for this SDK version"""
-        if not self.camera.is_connected:
-            return
-            
-        try:
-            # Get available view types
-            available_types = self.camera.get_available_view_types()
-            self.logger.info(f"Available view types: {available_types}")
-            
-            # Fixed size for preview images
-            preview_width = 320
-            preview_height = 240
-            
-            # Update frame titles based on available types
-            if "disparity" in available_types:
-                # If disparity is available, use it for the third view
-                if "disparity" in self.preview_labels:
-                    # Update the frame title only
-                    self.preview_labels["disparity"].master.master.configure(text="Disparity Map")
-                    
-                    # Show the disparity checkbox
-                    if "disparity" in self.view_checkbuttons:
-                        self.view_checkbuttons["disparity"].grid()
-                        
-            elif "confidence" in available_types:
-                # If confidence is available but disparity isn't, use confidence for the third view
-                if "disparity" in self.preview_labels:
-                    # Update the frame title only
-                    self.preview_labels["disparity"].master.master.configure(text="Confidence Map")
-                    
-                    # Show the confidence checkbox instead of disparity
-                    if "confidence" in self.view_checkbuttons and "disparity" in self.view_checkbuttons:
-                        self.view_checkbuttons["disparity"].grid_remove()
-                        self.view_checkbuttons["confidence"].grid()
-            
-            # Update depth view if available
-            if "depth" in available_types:
-                if "depth" in self.view_checkbuttons:
-                    self.view_checkbuttons["depth"].grid()
-            else:
-                if "depth" in self.view_checkbuttons:
-                    self.view_checkbuttons["depth"].grid_remove()
-            
-            # Update point cloud view if available
-            # if "point_cloud" in available_types:
-            #     if "point_cloud" in self.view_checkbuttons:
-            #         self.view_checkbuttons["point_cloud"].grid()
-            # else:
-            #     if "point_cloud" in self.view_checkbuttons:
-            #         self.view_checkbuttons["point_cloud"].grid_remove()
-                    
-            # Update label text for unavailable views
-            for view_type in ["depth", "disparity", "confidence"]: # "point_cloud"
-                if view_type not in available_types and view_type in self.preview_labels:
-                    label = self.preview_labels[view_type]
-                    if label:
-                        label.config(text=f"{view_type.title()} view not available", image="")
-                        
-        except Exception as e:
-            self.logger.error(f"Error updating view UI: {e}")
-
-    def on_gps_device_changed(self, event=None):
-        """Handle change of GPS device selection"""
-        device = self.gps_device_var.get()
-        
-        # Update port and baud rate based on selected device
-        if device in self.settings["gps"]["devices"]:
-            device_config = self.settings["gps"]["devices"][device]
-            self.gps_port_var.set(device_config["port"])
-            self.gps_baud_var.set(device_config["baud_rate"])
-            
-        # Update active device in settings
-        self.settings["gps"]["active_device"] = device
-
-    def on_add_gps_device(self):
-        """Add a new GPS device configuration"""
-        try:
-            # Create a dialog window
-            dialog = tk.Toplevel(self.root)
-            dialog.title("Add GPS Device")
-            dialog.geometry("400x300")
-            dialog.transient(self.root)  # Make it a child of the main window
-            dialog.grab_set()  # Make it modal
-            
-            # Device fields
-            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-            name_var = StringVar()
-            name_entry = ttk.Entry(dialog, textvariable=name_var, width=25)
-            name_entry.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-            model_var = StringVar(value="uBlox")
-            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
-                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
-            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-            port_var = StringVar(value="/dev/ttyUSB2")
-            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
-            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
-            baud_var = IntVar(value=9600)
-            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
-                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                    state="readonly", width=10)
-            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            # Function to handle model change - update default port/baud
-            def on_model_change(event=None):
-                model = model_var.get()
-                if model == "uBlox":
-                    port_var.set("/dev/ttyACM0")
-                    baud_var.set(9600)
-                elif model == "BU353N5":
-                    port_var.set("/dev/ttyUSB2")
-                    baud_var.set(4800)
-                    
-            model_combo.bind("<<ComboboxSelected>>", on_model_change)
-            
-            # Buttons
-            button_frame = ttk.Frame(dialog)
-            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
-            
-            def on_save():
-                # Validate
-                device_name = name_var.get().strip()
-                if not device_name:
-                    messagebox.showerror("Error", "Device name cannot be empty", parent=dialog)
-                    return
-                    
-                if device_name in self.settings["gps"]["devices"]:
-                    messagebox.showerror("Error", f"Device '{device_name}' already exists", parent=dialog)
-                    return
-                    
-                # Create new device config
-                self.settings["gps"]["devices"][device_name] = {
-                    "model": model_var.get(),
-                    "port": port_var.get(),
-                    "baud_rate": baud_var.get(),
-                    "timeout": 1.0
-                }
-                
-                # Update device list in UI
-                device_combo = self.notebook.nametowidget(
-                    self.notebook.select()).nametowidget("!frame.!frame.!combobox")
-                device_combo['values'] = list(self.settings["gps"]["devices"].keys())
-                
-                # Close dialog
-                dialog.destroy()
-                
-                # Save settings
-                save_settings(self.settings)
-                
-                # Show success message
-                messagebox.showinfo("Success", f"Device '{device_name}' added successfully")
-                
-            def on_cancel():
-                dialog.destroy()
-                
-            save_button = ttk.Button(button_frame, text="Save", command=on_save)
-            save_button.pack(side=tk.LEFT, padx=10)
-            
-            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
-            cancel_button.pack(side=tk.LEFT, padx=10)
-            
-        except Exception as e:
-            self.logger.error(f"Error adding GPS device: {e}")
-            messagebox.showerror("Error", f"Failed to add GPS device: {e}")
-
-    def on_edit_gps_device(self):
-        """Edit an existing GPS device configuration"""
-        try:
-            # Get current device
-            current_device = self.gps_device_var.get()
-            
-            if current_device not in self.settings["gps"]["devices"]:
-                messagebox.showerror("Error", "Please select a device to edit")
-                return
-                
-            # Cannot edit the default device
-            if current_device == "default" and len(self.settings["gps"]["devices"]) > 1:
-                messagebox.showerror("Error", "The default device cannot be edited. Please add a new device instead.")
-                return
-                
-            # Get current device config
-            device_config = self.settings["gps"]["devices"][current_device]
-            
-            # Create a dialog window
-            dialog = tk.Toplevel(self.root)
-            dialog.title(f"Edit GPS Device: {current_device}")
-            dialog.geometry("400x300")
-            dialog.transient(self.root)  # Make it a child of the main window
-            dialog.grab_set()  # Make it modal
-            
-            # Device fields - name is not editable
-            ttk.Label(dialog, text="Device Name:").grid(row=0, column=0, sticky=tk.W, padx=10, pady=5)
-            name_label = ttk.Label(dialog, text=current_device)
-            name_label.grid(row=0, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Model:").grid(row=1, column=0, sticky=tk.W, padx=10, pady=5)
-            model_var = StringVar(value=device_config.get("model", "uBlox"))
-            model_combo = ttk.Combobox(dialog, textvariable=model_var, 
-                                    values=["uBlox", "BU353N5"], state="readonly", width=15)
-            model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-            port_var = StringVar(value=device_config.get("port", "/dev/ttyACM0"))
-            port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
-            port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            ttk.Label(dialog, text="Baud Rate:").grid(row=3, column=0, sticky=tk.W, padx=10, pady=5)
-            baud_var = IntVar(value=device_config.get("baud_rate", 9600))
-            baud_combo = ttk.Combobox(dialog, textvariable=baud_var, 
-                                    values=[4800, 9600, 19200, 38400, 57600, 115200], 
-                                    state="readonly", width=10)
-            baud_combo.grid(row=3, column=1, sticky=tk.W, padx=10, pady=5)
-            
-            # Buttons
-            button_frame = ttk.Frame(dialog)
-            button_frame.grid(row=4, column=0, columnspan=2, pady=20)
-            
-            def on_save():
-                # Update device config
-                self.settings["gps"]["devices"][current_device] = {
-                    "model": model_var.get(),
-                    "port": port_var.get(),
-                    "baud_rate": baud_var.get(),
-                    "timeout": device_config.get("timeout", 1.0)
-                }
-                
-                # Update UI if this is the active device
-                if current_device == self.settings["gps"]["active_device"]:
-                    self.gps_port_var.set(port_var.get())
-                    self.gps_baud_var.set(baud_var.get())
-                
-                # Close dialog
-                dialog.destroy()
-                
-                # Save settings
-                save_settings(self.settings)
-                
-                # Show success message
-                messagebox.showinfo("Success", f"Device '{current_device}' updated successfully")
-                
-            def on_cancel():
-                dialog.destroy()
-                
-            save_button = ttk.Button(button_frame, text="Save", command=on_save)
-            save_button.pack(side=tk.LEFT, padx=10)
-            
-            cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel)
-            cancel_button.pack(side=tk.LEFT, padx=10)
-            
-        except Exception as e:
-            self.logger.error(f"Error editing GPS device: {e}")
-            messagebox.showerror("Error", f"Failed to edit GPS device: {e}")
-
-    def on_remove_gps_device(self):
-        """Remove a GPS device configuration"""
-        try:
-            # Get current device
-            current_device = self.gps_device_var.get()
-            
-            if current_device not in self.settings["gps"]["devices"]:
-                messagebox.showerror("Error", "Please select a device to remove")
-                return
-                
-            # Cannot remove the default device
-            if current_device == "default":
-                messagebox.showerror("Error", "The default device cannot be removed")
-                return
-                
-            # Confirm removal
-            confirm = messagebox.askyesno("Confirm Removal", 
-                                    f"Are you sure you want to remove the device '{current_device}'?")
-            if not confirm:
-                return
-                
-            # Check if this is the active device
-            is_active = (current_device == self.settings["gps"]["active_device"])
-            
-            # Remove the device
-            del self.settings["gps"]["devices"][current_device]
-            
-            # If it was the active device, switch to default
-            if is_active:
-                self.settings["gps"]["active_device"] = "default"
-                self.gps_device_var.set("default")
-                
-                # Update port and baud UI
-                default_config = self.settings["gps"]["devices"]["default"]
-                self.gps_port_var.set(default_config["port"])
-                self.gps_baud_var.set(default_config["baud_rate"])
-                
-            # Update device list in UI
-            device_combo = self.notebook.nametowidget(
-                self.notebook.select()).nametowidget("!frame.!frame.!combobox")
-            device_combo['values'] = list(self.settings["gps"]["devices"].keys())
-            
-            # Save settings
-            save_settings(self.settings)
-            
-            # Show success message
-            messagebox.showinfo("Success", f"Device '{current_device}' removed successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Error removing GPS device: {e}")
-            messagebox.showerror("Error", f"Failed to remove GPS device: {e}")

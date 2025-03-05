@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GPS module for ZED Camera Capture Tool.
-Handles interaction with the uBlox GPS receiver via serial port.
+Handles interaction with the BU-353N5 GPS receiver via serial port.
 """
 
 import logging
@@ -14,18 +14,7 @@ from datetime import datetime
 
 class GPSReceiver:
     """Class to manage the GPS operations"""
-    # Add GPS model-specific configurations
-    GPS_MODELS = {
-        "uBlox": {
-            "default_baud": 9600,
-            "default_port": "/dev/ttyACM0"
-        },
-        "BU353N5": {
-            "default_baud": 4800,
-            "default_port": "/dev/ttyUSB2"
-        }
-    }
-
+    
     def __init__(self):
         self.serial_port = None
         self.is_connected = False
@@ -47,32 +36,32 @@ class GPSReceiver:
         
         # Last position for distance calculation
         self.last_position = (None, None)
+        # Store last raw NMEA sentence
+        self.last_raw_nmea = None
 
     def connect(self, settings):
-        """Connect to the GPS device"""
+        """Connect to the GPS device (BU-353N5) using the given settings."""
         if self.is_connected:
             self.disconnect()
             
         try:
-            # Get active device config
-            active_device = settings["gps"]["active_device"] if "active_device" in settings["gps"] else "default"
-            device_config = settings["gps"]["devices"][active_device]
-            self.current_model = device_config["model"]
-
-            port = device_config["port"]
-            baud_rate = device_config["baud_rate"]
-            timeout = device_config.get("timeout", 1.0)
+            # Get GPS settings - simplified for BU-353N5 only
+            port = settings["gps"]["port"]
+            baud_rate = 4800  # Fixed for BU-353N5
+            timeout = 1.0
             
-            self.logger.info(f"Attempting to connect to GPS model {self.current_model} on {port} at {baud_rate} baud")
+            self.logger.info(f"Attempting to connect to BU-353N5 GPS on {port}")
             
             # Try opening the port
             self.serial_port = serial.Serial(port, baud_rate, timeout=timeout)
             
-            # Test if data is coming through
+            # Read a few lines to check if data is arriving
             initial_data = []
-            for _ in range(5):  # Try to read 5 lines
+            for _ in range(5):
                 if self.serial_port.in_waiting:
-                    line = self.serial_port.readline().decode('ascii', errors='replace').strip()
+                    line = (self.serial_port.readline()
+                                        .decode('ascii', errors='replace')
+                                        .strip())
                     if line:
                         initial_data.append(line)
                         self.logger.debug(f"GPS initial data: {line}")
@@ -83,18 +72,14 @@ class GPSReceiver:
             else:
                 self.logger.info(f"Received {len(initial_data)} lines of initial GPS data")
                 
-            # Add last raw NMEA storage
-            self.last_raw_nmea = None
-            
             self.is_connected = True
             
             # Start the reading thread
             self.thread_running = True
-            self.thread = threading.Thread(target=self._read_gps_data)
-            self.thread.daemon = True
+            self.thread = threading.Thread(target=self._read_gps_data, daemon=True)
             self.thread.start()
             
-            self.logger.info(f"Connected to GPS device '{active_device}' on port {port}")
+            self.logger.info(f"Connected to GPS device on port {port}")
             return True
             
         except Exception as e:
@@ -102,7 +87,7 @@ class GPSReceiver:
             return False
             
     def disconnect(self):
-        """Disconnect from the GPS device"""
+        """Disconnect from the GPS device."""
         if self.is_connected:
             # Stop the reading thread
             self.thread_running = False
@@ -118,15 +103,15 @@ class GPSReceiver:
             self.logger.info("Disconnected from GPS")
             
     def _read_gps_data(self):
-        """Read and parse GPS data in a background thread"""
+        """Read and parse GPS data in a background thread."""
         while self.thread_running and self.serial_port and self.serial_port.is_open:
             try:
-                line = self.serial_port.readline().decode('ascii', errors='replace').strip()
-                
+                line = (self.serial_port.readline()
+                                    .decode('ascii', errors='replace')
+                                    .strip())
                 if line:
-                    # Store raw NMEA sentence
+                    # Keep the most recent raw NMEA sentence
                     self.last_raw_nmea = line
-                    
                     if line.startswith('$'):
                         try:
                             msg = pynmea2.parse(line)
@@ -152,59 +137,59 @@ class GPSReceiver:
                                 # Recommended Minimum Navigation Information
                                 self.current_data["latitude"] = msg.latitude
                                 self.current_data["longitude"] = msg.longitude
-                                self.current_data["speed"] = msg.spd_over_grnd * 1.852  # Convert knots to km/h
+                                # Convert knots to km/h
+                                self.current_data["speed"] = msg.spd_over_grnd * 1.852
                                 
                                 if msg.datestamp and msg.timestamp:
                                     timestamp = datetime.combine(msg.datestamp, msg.timestamp)
                                     self.current_data["timestamp"] = timestamp.isoformat()
                                     
-                            # Update last position for distance calculation if we have valid coordinates
-                            if self.current_data["latitude"] is not None and self.current_data["longitude"] is not None:
-                                self.last_position = (self.current_data["latitude"], self.current_data["longitude"])
+                            # Update last position if we have valid coordinates
+                            if (self.current_data["latitude"] is not None and
+                                self.current_data["longitude"] is not None):
+                                self.last_position = (self.current_data["latitude"],
+                                                      self.current_data["longitude"])
                                 
                         except pynmea2.ParseError:
-                            pass  # Ignore parse errors
-                            
+                            # Ignore parse errors but continue the loop
+                            pass
             except Exception as e:
                 self.logger.error(f"Error reading GPS data: {e}")
                 time.sleep(0.1)  # Prevent tight loop on error
                 
     def get_current_data(self):
-        """Get the current GPS data"""
+        """Get the most recent parsed GPS data."""
         return self.current_data.copy()
         
     def has_fix(self):
-        """Check if GPS has a fix (valid position)"""
-        return (self.current_data["latitude"] is not None and 
-                self.current_data["longitude"] is not None and 
-                self.current_data["fix_quality"] is not None and 
-                self.current_data["fix_quality"] > 0)
+        """Check if GPS has a valid fix (latitude/longitude + fix quality)."""
+        cd = self.current_data
+        return (cd["latitude"] is not None and
+                cd["longitude"] is not None and
+                cd["fix_quality"] is not None and
+                cd["fix_quality"] > 0)
                 
     def distance_from_last(self, new_position):
         """
-        Calculate distance between current position and last saved position in meters
+        Calculate distance between new_position and the last_position, in meters.
         
-        Args:
-            new_position: Tuple of (latitude, longitude)
-            
-        Returns:
-            float: Distance in meters, or None if no previous position
+        Returns None if the last_position was never set.
         """
         if self.last_position[0] is None or self.last_position[1] is None:
             return None
             
-        # Haversine formula for distance calculation
+        # Haversine formula
         lat1, lon1 = self.last_position
         lat2, lon2 = new_position
         
-        # Convert decimal degrees to radians
+        # Convert degrees to radians
         lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
         
-        # Haversine formula
         dlon = lon2 - lon1
         dlat = lat2 - lat1
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        a = (math.sin(dlat/2)**2
+             + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2)
         c = 2 * math.asin(math.sqrt(a))
-        r = 6371000  # Radius of earth in meters
+        r = 6371000  # Earth radius in meters
         
         return c * r
