@@ -753,24 +753,23 @@ class MainWindow:
         if not self.gps.is_connected:
             messagebox.showerror("Error", "GPS not connected")
             return
-        
+
         # Clear the text widget or append a header
         self.nmea_text.insert(tk.END, "--- Last 5 NMEA Sentences ---\n")
         self.nmea_text.see(tk.END)
-        
-        # We attempt to read e.g. 10 lines or until 5 seconds passes
+
         count = 0
         # Retrieve and display the stored sentences
         for sentence in self.gps.last_nmea_sentences:
             self.nmea_text.insert(tk.END, sentence + "\n")
             count += 1
-        
+
         self.nmea_text.insert(tk.END, "--- End of Test ---\n\n")
         self.nmea_text.see(tk.END)
-        
+
         if count == 0:
             self.nmea_text.insert(tk.END, "No data received.\n")
-        else 
+        else:
             # Retrieve the latest parsed data from the GPSReceiver
             data = self.gps.current_data
             output = []
@@ -795,6 +794,7 @@ class MainWindow:
             lat = data.get("latitude")
             lon = data.get("longitude")
             if lat is not None and lon is not None:
+                # Ensure format_coordinate is defined elsewhere in your code
                 dms_lat = format_coordinate(lat, is_lat=True)
                 dms_lon = format_coordinate(lon, is_lat=False)
                 output.append(f"Position: {dms_lat}, {dms_lon}")
@@ -819,7 +819,6 @@ class MainWindow:
 
         self.nmea_text.insert(tk.END, "--- Test Complete ---\n\n")
         self.nmea_text.see(tk.END)
-
     # ----------------- Capture (Time/GPS/Single) -----------------
     
     def on_start_capture_clicked(self):
