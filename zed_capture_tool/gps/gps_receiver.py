@@ -22,7 +22,7 @@ class GPSReceiver:
         },
         "BU353N5": {
             "default_baud": 4800,
-            "default_port": "/dev/ttyUSB0"
+            "default_port": "/dev/ttyUSB2"
         }
     }
 

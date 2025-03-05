@@ -38,7 +38,7 @@ DEFAULT_SETTINGS = {
             },
             "bu353n5": {
                 "model": "BU353N5",
-                "port": "/dev/ttyUSB0",
+                "port": "/dev/ttyUSB2",
                 "baud_rate": 4800,
                 "timeout": 1.0
             }

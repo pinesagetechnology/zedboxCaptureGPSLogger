@@ -1652,7 +1652,7 @@ class MainWindow:
             model_combo.grid(row=1, column=1, sticky=tk.W, padx=10, pady=5)
             
             ttk.Label(dialog, text="Port:").grid(row=2, column=0, sticky=tk.W, padx=10, pady=5)
-            port_var = StringVar(value="/dev/ttyUSB0")
+            port_var = StringVar(value="/dev/ttyUSB2")
             port_entry = ttk.Entry(dialog, textvariable=port_var, width=25)
             port_entry.grid(row=2, column=1, sticky=tk.W, padx=10, pady=5)
             
@@ -1670,7 +1670,7 @@ class MainWindow:
                     port_var.set("/dev/ttyACM0")
                     baud_var.set(9600)
                 elif model == "BU353N5":
-                    port_var.set("/dev/ttyUSB0")
+                    port_var.set("/dev/ttyUSB2")
                     baud_var.set(4800)
                     
             model_combo.bind("<<ComboboxSelected>>", on_model_change)
