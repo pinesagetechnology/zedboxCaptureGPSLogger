@@ -31,12 +31,6 @@ DEFAULT_SETTINGS = {
         "active_device": "bu353n5",       # Changed from "default" to "bu353n5"
         "port": "/dev/ttyUSB2",            # Added to fix the port to ttyUSB2 by default
         "devices": {
-            "default": {
-                "model": "uBlox",
-                "port": "/dev/ttyACM0",
-                "baud_rate": 9600,
-                "timeout": 1.0
-            },
             "bu353n5": {
                 "model": "BU353N5",
                 "port": "/dev/ttyUSB2",
