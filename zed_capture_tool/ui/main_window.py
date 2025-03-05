@@ -586,13 +586,14 @@ class MainWindow:
             if self.gps.is_connected:
                 gps_data = self.gps.get_current_data()
                 fix_status = "Fix" if self.gps.has_fix() else "No Fix"
-                sats = gps_data["satellites"] if gps_data["satellites"] else "?"
-                
+                sats = gps_data["satellites"] if gps_data.get("satellites") else "?"
                 self.gps_status_label.config(text=f"GPS: Connected ({fix_status}, Sats: {sats})")
                 self.gps_connect_button.state(['disabled'])
                 self.gps_disconnect_button.state(['!disabled'])
                 self.gps_test_button.state(['!disabled'])
                 
+                # Update detailed GPS info in the GPS tab
+                self.update_gps_details()
             else:
                 self.gps_status_label.config(text="GPS: Disconnected")
                 self.gps_connect_button.state(['!disabled'])
@@ -1120,3 +1121,50 @@ class MainWindow:
         save_settings(self.settings)
         
         self.root.destroy()
+
+    def format_coordinate(coord, is_lat=True):
+        """
+        Convert a decimal coordinate into a DMS (degrees, minutes, seconds) string.
+        Returns a string like: 37°48'30.00" N or 122°24'15.00" W.
+        """
+        try:
+            d = abs(coord)
+            degrees = int(d)
+            minutes = int((d - degrees) * 60)
+            seconds = (d - degrees - minutes/60) * 3600
+            direction = ''
+            if is_lat:
+                direction = 'N' if coord >= 0 else 'S'
+            else:
+                direction = 'E' if coord >= 0 else 'W'
+            return f"{degrees}°{minutes}'{seconds:.2f}\" {direction}"
+        except Exception:
+            return "N/A"
+
+    def update_gps_details(self):
+        """
+        Update the detailed GPS status labels in the GPS tab with user-friendly data.
+        """
+        if self.gps.is_connected:
+            gps_data = self.gps.get_current_data()
+            fix_status = "Fix" if self.gps.has_fix() else "No Fix"
+            self.gps_status_labels["gps_connection_status"].config(text="Connected")
+            self.gps_status_labels["gps_fix_type"].config(text=fix_status)
+            self.gps_status_labels["gps_satellites"].config(text=str(gps_data.get("satellites", "?")))
+            
+            latitude = gps_data.get("latitude")
+            longitude = gps_data.get("longitude")
+            # Use the helper function to format coordinates if available
+            if latitude is not None:
+                self.gps_status_labels["gps_latitude"].config(text=format_coordinate(latitude, is_lat=True))
+            else:
+                self.gps_status_labels["gps_latitude"].config(text="N/A")
+            
+            if longitude is not None:
+                self.gps_status_labels["gps_longitude"].config(text=format_coordinate(longitude, is_lat=False))
+            else:
+                self.gps_status_labels["gps_longitude"].config(text="N/A")
+            
+            self.gps_status_labels["gps_altitude"].config(text=str(gps_data.get("altitude", "N/A")))
+            self.gps_status_labels["gps_speed"].config(text=str(gps_data.get("speed", "N/A")))
+            self.gps_status_labels["gps_time"].config(text=str(gps_data.get("timestamp", "N/A")))

@@ -243,7 +243,7 @@ class CaptureController:
         """
         import math
         # Both positions must be valid
-        if not (pos1[0] and pos1[1] and pos2[0] and pos2[1]):
+        if pos1[0] is None or pos1[1] is None or pos2[0] is None or pos2[1] is None:
             return None
             
         # Convert decimal degrees to radians
