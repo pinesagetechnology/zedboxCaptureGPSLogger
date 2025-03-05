@@ -29,11 +29,11 @@ DEFAULT_SETTINGS = {
     },
     "gps": {
         "active_device": "bu353n5",       # Changed from "default" to "bu353n5"
-        "port": "/dev/ttyUSB2",            # Added to fix the port to ttyUSB2 by default
+        "port": "/dev/gps",            # Added to fix the port to gps whgich is bbind to ttyUSB* by default
         "devices": {
             "bu353n5": {
                 "model": "BU353N5",
-                "port": "/dev/ttyUSB2",
+                "port": "/dev/gps",
                 "baud_rate": 4800,
                 "timeout": 1.0
             }
