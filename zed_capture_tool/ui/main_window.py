@@ -67,8 +67,10 @@ class MainWindow:
             }
         
         # GPS setting variables
-        self.gps_port_var = StringVar(value=self.settings["gps"]["port"])
-        self.gps_baud_var = IntVar(value=self.settings["gps"]["baud_rate"])
+        active_device = self.settings["gps"]["active_device"]
+        device_config = self.settings["gps"]["devices"][active_device]
+        self.gps_port_var = StringVar(value=device_config["port"])
+        self.gps_baud_var = IntVar(value=device_config["baud_rate"])
         
         # Set up UI
         self.setup_ui()
