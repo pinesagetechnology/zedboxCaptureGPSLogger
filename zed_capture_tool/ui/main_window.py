@@ -55,6 +55,9 @@ class MainWindow:
         self.resolution_var = StringVar(value=self.settings["camera"]["resolution"])
         self.fps_var = IntVar(value=self.settings["camera"]["fps"])
         
+         # Add this line here:
+        self.gps_device_var = StringVar(value=self.settings["gps"]["active_device"])
+
         # Camera setting variables
         self.camera_settings_vars = {}
         for name in ["brightness", "contrast", "hue", "saturation", "exposure", "gain", "whitebalance"]:
@@ -401,8 +404,8 @@ class MainWindow:
         
         ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
     
-        # Create variable for GPS device selection
-        self.gps_device_var = StringVar(value="default")  # Default to "default" device
+        # # Create variable for GPS device selection
+        # self.gps_device_var = StringVar(value="default")  # Default to "default" device
         
         # Get available devices from settings
         available_devices = list(self.settings["gps"]["devices"].keys())
@@ -1240,7 +1243,7 @@ class MainWindow:
 
     def setup_gps_tab(self):
         """Set up the GPS testing and monitoring tab"""
-        
+            
         # Main frame
         main_frame = ttk.Frame(self.gps_tab)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -1249,14 +1252,27 @@ class MainWindow:
         conn_frame = ttk.LabelFrame(main_frame, text="GPS Connection")
         conn_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        # Port and baud rate
+        # Device selection
+        device_frame = ttk.Frame(conn_frame)
+        device_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(device_frame, text="GPS Device:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Get available devices from settings
+        available_devices = list(self.settings["gps"]["devices"].keys())
+        
+        # Create device selection dropdown (moved from settings tab)
+        device_combo = ttk.Combobox(device_frame, textvariable=self.gps_device_var, 
+                                values=available_devices, state="readonly", width=15)
+        device_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
+        device_combo.bind("<<ComboboxSelected>>", self.on_gps_device_changed)
+
+       # Port and baud rate
         settings_frame = ttk.Frame(conn_frame)
-        settings_frame.pack(fill=tk.X, padx=10, pady=10)
+        settings_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(settings_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
         
-        # Default to ttyACM0 for your setup
-        self.gps_port_var.set("/dev/ttyACM0")
         port_entry = ttk.Entry(settings_frame, textvariable=self.gps_port_var, width=20)
         port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
         
