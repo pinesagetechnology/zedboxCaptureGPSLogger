@@ -9,6 +9,7 @@ import math
 import time
 import threading
 import serial
+import serial.tools.list_ports
 import pynmea2
 from datetime import datetime
 
@@ -41,6 +42,39 @@ class GPSReceiver:
         # NEW: Store the last 5 raw NMEA sentences
         self.last_nmea_sentences = []
 
+    @staticmethod
+    def find_gps_port():
+        """
+        Attempt to find the GPS device port on Linux systems.
+        Returns the port name if found, None otherwise.
+        """
+        # Known USB IDs for BU-353N5 (you might need to add more vendor/product IDs)
+        GPS_VENDORS = {
+            "067b",  # Prolific Technology (common in GPS devices)
+            "1546"   # U-Blox AG
+        }
+        
+        for port in serial.tools.list_ports.comports():
+            # Check if it's a USB device
+            if port.vid is not None:
+                vid = f"{port.vid:04x}"  # Convert to hex string
+                if vid in GPS_VENDORS:
+                    return port.device
+                
+            # On Linux, GPS devices often appear as /dev/ttyUSB* or /dev/ttyACM*
+            if port.device.startswith(("/dev/ttyUSB", "/dev/ttyACM")):
+                try:
+                    # Try to open the port and read NMEA sentences
+                    with serial.Serial(port.device, 4800, timeout=1) as ser:
+                        for _ in range(5):  # Try reading a few times
+                            line = ser.readline().decode('ascii', errors='replace').strip()
+                            if line.startswith('$GP') or line.startswith('$GN'):
+                                return port.device
+                except:
+                    continue
+                    
+        return None
+
     def connect(self, settings):
         """Connect to the GPS device (BU-353N5) using the given settings."""
         if self.is_connected:
@@ -48,8 +82,16 @@ class GPSReceiver:
             
         try:
             # Get GPS settings - simplified for BU-353N5 only
-            port = settings["gps"]["port"]
-            baud_rate = settings["gps"].get("baud_rate", 4800)  # default to 4800 if not found - baud_rate = 4800  # Fixed for BU-353N5
+            port = settings.get("gps", {}).get("port")
+            if not port:
+                # Try to automatically find the GPS port
+                port = self.find_gps_port()
+                if not port:
+                    self.logger.error("Could not automatically find GPS device port")
+                    return False
+                self.logger.info(f"Automatically found GPS device at {port}")
+                
+            baud_rate = settings.get("gps", {}).get("baud_rate", 4800)  # default to 4800
             timeout = 1.0
             
             self.logger.info(f"Attempting to connect to GPS on {port} at {baud_rate} baud")
