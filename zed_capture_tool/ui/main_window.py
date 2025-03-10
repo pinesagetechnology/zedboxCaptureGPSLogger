@@ -388,8 +388,16 @@ class MainWindow:
         port_frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Label(port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W)
-        port_entry = ttk.Entry(port_frame, textvariable=self.gps_port_var, width=20)
-        port_entry.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        # Change: Replace the text entry with a dropdown (Combobox)
+        port_combo = ttk.Combobox(
+            port_frame,
+            textvariable=self.gps_port_var,
+            values=["/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyUSB2"],
+            state="readonly",
+            width=20
+        )
+        port_combo.grid(row=0, column=1, padx=5, sticky=tk.W)
         
         # Baud rate dropdown
         ttk.Label(port_frame, text="Baud:").grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
@@ -406,7 +414,7 @@ class MainWindow:
         button_frame.pack(fill=tk.X, padx=10, pady=5)
         
         self.gps_connect_button = ttk.Button(button_frame, text="Connect GPS",
-                                             command=self.on_connect_gps_clicked)
+                                            command=self.on_connect_gps_clicked)
         self.gps_connect_button.pack(side=tk.LEFT, padx=5)
         
         self.gps_disconnect_button = ttk.Button(button_frame, text="Disconnect GPS",
@@ -415,7 +423,7 @@ class MainWindow:
         self.gps_disconnect_button.state(['disabled'])
         
         self.gps_test_button = ttk.Button(button_frame, text="Test GPS",
-                                          command=self.on_test_gps_clicked)
+                                        command=self.on_test_gps_clicked)
         self.gps_test_button.pack(side=tk.LEFT, padx=5)
         self.gps_test_button.state(['disabled'])
         
@@ -435,7 +443,7 @@ class MainWindow:
         
         # Clear log
         button_clear = ttk.Button(nmea_frame, text="Clear",
-                                  command=lambda: self.nmea_text.delete("1.0", tk.END))
+                                command=lambda: self.nmea_text.delete("1.0", tk.END))
         button_clear.pack(side=tk.RIGHT, padx=5, pady=5)
         
     def setup_settings_tab(self):
